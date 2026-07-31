@@ -8,13 +8,12 @@ import uuid
 import smtplib
 from email.message import EmailMessage
 
-# --- 1. הגדרות עמוד ועיצוב ---
+# --- 1. הגדרות עמוד ועיצוב ויזואלי מרהיב ---
 st.set_page_config(page_title="FocusFlow | ניהול משימות מתקדם", page_icon="🎯", layout="centered")
 
-# הזרקת CSS לעיצוב מודרני ותמיכה מלאה ב-RTL
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap');
     
     [data-testid="stSidebar"], [data-testid="collapsedControl"], header, [data-testid="stToolbar"] {
         display: none !important;
@@ -25,26 +24,48 @@ st.markdown("""
         text-align: right;
         font-family: 'Assistant', sans-serif !important;
     }
-    
-    .task-card {
-        background-color: #1E293B;
-        color: #F8FAFC;
-        padding: 15px;
-        border-radius: 10px;
-        border-right: 5px solid #3B82F6;
-        margin-bottom: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+
+    .stApp {
+        background-color: #0f172a;
+        color: #f8fafc;
     }
-    .task-title { font-size: 18px; font-weight: bold; margin-bottom: 5px; color: #38BDF8; }
-    .task-desc { font-size: 14px; color: #94A3B8; margin-bottom: 10px; }
-    .task-meta { font-size: 12px; color: #CBD5E1; display: flex; justify-content: space-between; }
-    .tag { background-color: #334155; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+    /* כרטיסיות משימות מעוצבות */
+    .task-card {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        border: 1px solid #334155;
+        padding: 16px;
+        border-radius: 16px;
+        border-right: 6px solid #3b82f6;
+        margin-bottom: 12px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+    }
+    .task-title { font-size: 19px; font-weight: 700; color: #38bdf8; margin-bottom: 4px; }
+    .task-desc { font-size: 14px; color: #94a3b8; margin-bottom: 10px; }
+    .task-meta { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; }
+    .tag { background-color: #1e3a8a; color: #bfdbfe; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
     
-    .stButton>button { border-radius: 10px; font-weight: 600; width: 100%; }
+    /* עיצוב כפתורים */
+    .stButton>button {
+        border-radius: 12px;
+        font-weight: 700;
+        transition: all 0.2s ease;
+        width: 100%;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    
+    div[data-testid="metric-container"] {
+        background: #1e293b;
+        border: 1px solid #334155;
+        padding: 12px;
+        border-radius: 14px;
+        text-align: center;
+        border-right: 4px solid #10b981;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. מנגנון שמירה מקומית יציבה ---
+# --- 2. מנגנון שמירה יציב ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, 'focusflow_data.json')
 
@@ -55,7 +76,7 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    return {"tasks": [], "reminders": [], "xp": 0, "level": 1}
+    return {"tasks": [], "reminders": [], "xp": 0, "level": 1, "sender_email": "", "sender_password": ""}
 
 def save_data(data):
     try:
@@ -76,16 +97,14 @@ def update_xp(amount):
         st.toast(f"🎉 מזל טוב! עלית לרמה {new_level}!")
     save_data(st.session_state.app_data)
 
-# פונקציית שליחת מייל ל-SHIRPI29@GMAIL.COM
+# פונקציית שליחת מייל אמיתית ל-SHIRPI29@GMAIL.COM
 def send_email_notification(subject, body):
     target_email = "SHIRPI29@GMAIL.COM"
-    # הערה: כדי לשלוח מייל אוטומטי משרת חיצוני יש להזין סיסמת אפליקציה (App Password) מתוך חשבון הגוגל השולח.
-    # אם מוגדרת כתובת שולח, המערכת תנסה לשלוח.
-    sender_email = st.session_state.app_data.get("sender_email", "")
-    sender_password = st.session_state.app_data.get("sender_password", "")
+    sender_email = st.session_state.app_data.get("sender_email", "").strip()
+    sender_password = st.session_state.app_data.get("sender_password", "").strip()
     
     if not sender_email or not sender_password:
-        return False, "לא הוגדרה כתובת מייל או סיסמת אפליקציה בלשונית הגדרות."
+        return False, "לא הוגדרו פרטי מייל שולח בלשונית 'הגדרות'."
     
     try:
         msg = EmailMessage()
@@ -97,23 +116,23 @@ def send_email_notification(subject, body):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(sender_email, sender_password)
             server.send_message(msg)
-        return True, "האימייל נשלח בהצלחה ל-SHIRPI29@GMAIL.COM!"
+        return True, "המייל נשלח בהצלחה ל-SHIRPI29@GMAIL.COM!"
     except Exception as e:
-        return False, f"שגיאה בשליחת המייל: {str(e)}"
+        return False, f"שגיאה בשליחת המייל (ודא סיסמת אפליקציה תקינה בגוגל): {str(e)}"
 
 tasks = st.session_state.app_data['tasks']
 reminders = st.session_state.app_data.setdefault('reminders', [])
 
-# --- 3. ממשק משתמש דרך Tabs ---
+# --- 3. ניהול ראשי ב-Tabs ---
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "🛒 רשימה", "➕ הוספה", "📋 קנבן", "⏰ תזכורות", "🍅 פומודורו", "⚙️ הגדרות"
+    "🎯 משימות", "➕ הוספה", "📋 קנבן", "⏰ תזכורות", "🍅 פוקוס", "⚙️ הגדרות"
 ])
 
 # ----------------------------------------
-# Tab 1: רשימה ראשית ודשבורד
+# Tab 1: רשימת משימות ודשבורד
 # ----------------------------------------
 with tab1:
-    st.title("🎯 FocusFlow | ניהול משימות")
+    st.title("🎯 FocusFlow | לוח בקרה")
     
     col1, col2, col3 = st.columns(3)
     completed_tasks = len([t for t in tasks if t['status'] == 'הושלם'])
@@ -124,10 +143,10 @@ with tab1:
     with col3: st.metric("פתוחות ⏳", active_tasks)
     
     st.markdown("---")
-    st.subheader("משימות לביצוע")
+    st.subheader("משימות פעילות")
     
     if not tasks:
-        st.info("אין משימות כרגע. הוסף משימה בלשונית 'הוספה'.")
+        st.info("💡 אין משימות כרגע. הוסף משימה חדשה בלשונית 'הוספה'.")
     else:
         for idx, task in enumerate(tasks):
             if task['status'] != 'הושלם':
@@ -135,10 +154,10 @@ with tab1:
                     st.markdown(f"""
                     <div class="task-card">
                         <div class="task-title">{task['title']}</div>
-                        <div class="task-desc">{task['description']}</div>
+                        <div class="task-desc">{task['description'] if task['description'] else 'אין תיאור נוסף'}</div>
                         <div class="task-meta">
                             <span class="tag">{task['category']}</span>
-                            <span>📅 {task['due_date']}</span>
+                            <span>📅 יעד: {task['due_date']}</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -178,7 +197,7 @@ with tab2:
                 tasks.append(new_task)
                 save_data(st.session_state.app_data)
                 update_xp(5)
-                st.success("המשימה נוספה בהצלחה!")
+                st.success("המשימה נוספה בהצלחה וקיבלת 5 XP!")
             else:
                 st.warning("נא להזין שם משימה.")
 
@@ -186,7 +205,7 @@ with tab2:
 # Tab 3: קנבן
 # ----------------------------------------
 with tab3:
-    st.header("📋 לוח קנבן")
+    st.header("📋 לוח קנבן ויזואלי")
     col_todo, col_done = st.columns(2)
     with col_todo:
         st.subheader("לביצוע 📝")
@@ -200,50 +219,54 @@ with tab3:
                 st.markdown(f"• ~~{t['title']}~~")
 
 # ----------------------------------------
-# Tab 4: תזכורות (שעון מעורר + מייל)
+# Tab 4: תזכורות (מקושרות למשימות + מייל + שעון אייפון)
 # ----------------------------------------
 with tab4:
-    st.header("⏰ ניהול תזכורות ושעון מעורר")
-    st.write("קבע תזכורת למשימה: המערכת תשלח אימייל אוטומטי ל־**SHIRPI29@GMAIL.COM** ותאפשר לך לפתוח את השעון המעורר באייפון.")
+    st.header("⏰ ניהול תזכורות למשימות")
+    st.write("בחר משימה קיימת, קבע לה מועד, והמערכת תתריע לך במייל ותסנכרן עם האייפון.")
     
     # כפתור קיצור דרך לשעון באייפון
     st.markdown("""
     <a href="clock-alarm://" target="_blank">
-        <button style="background-color: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 15px;">
+        <button style="background-color: #3b82f6; color: white; border: none; padding: 12px 20px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
             ⏰ פתח את אפליקציית השעון / שעון מעורר באייפון
         </button>
     </a>
     """, unsafe_allow_html=True)
     
-    with st.form("reminder_form"):
-        rem_title = st.text_input("כותרת התזכורת (למשל: לקנות חלב / פגישה)")
-        rem_date = st.date_input("תאריך התזכורת")
-        rem_time = st.time_input("שעת התזכורת")
-        
-        send_email_checkbox = st.checkbox("שלח התראה מיידית ל־SHIRPI29@GMAIL.COM 📧", value=True)
-        
-        if st.form_submit_button("הגדר תזכורת 🔔", type="primary"):
-            if rem_title.strip():
+    active_tasks_list = [t for t in tasks if t['status'] != 'הושלם']
+    
+    if not active_tasks_list:
+        st.info("💡 אין משימות פתוחות שאפשר לקשר אליהן תזכורת. הוסף משימה תחילה.")
+    else:
+        with st.form("reminder_form"):
+            task_titles = [t['title'] for t in active_tasks_list]
+            selected_task_title = st.selectbox("בחר משימה מתוך הרשימה שלך:", task_titles)
+            
+            rem_date = st.date_input("תאריך התזכורת")
+            rem_time = st.time_input("שעת התזכורת")
+            
+            send_email_checkbox = st.checkbox("שלח התראה מיידית ל־SHIRPI29@GMAIL.COM 📧", value=True)
+            
+            if st.form_submit_button("הגדר תזכורת למשימה 🔔", type="primary"):
                 rem_str = f"{rem_date} בשעה {rem_time}"
-                reminders.append({"title": rem_title, "time": rem_str})
+                reminders.append({"title": selected_task_title, "time": rem_str})
                 save_data(st.session_state.app_data)
                 
                 if send_email_checkbox:
                     success, msg = send_email_notification(
-                        subject=f"תזכורת חדשה מ-FocusFlow: {rem_title}",
-                        body=f"היי שיר,\n\nיש לך תזכורת חדשה:\nמשימה/אירוע: {rem_title}\nתאריך ושעה: {rem_str}\n\nבהצלחה!"
+                        subject=f"תזכורת למשימה: {selected_task_title}",
+                        body=f"היי שיר,\n\nיש לך תזכורת למשימה שלך:\n📌 משימה: {selected_task_title}\n⏰ מועד: {rem_str}\n\nבהצלחה בביצוע!"
                     )
                     if success:
                         st.success(msg)
                     else:
-                        st.warning(f"התזכורת נשמרה במערכת, אך שליחת המייל נכשלה: {msg}")
+                        st.warning(f"התזכורת נשמרה, אך שליחת המייל נכשלה: {msg}")
                 else:
                     st.success("התזכורת נוספה בהצלחה!")
-            else:
-                st.error("נא להזין כותרת לתזכורת.")
 
     if reminders:
-        st.markdown("### תזכורות פעילות:")
+        st.markdown("### 🔔 תזכורות פעילות למשימות:")
         for idx, r in enumerate(reminders):
             c1, c2 = st.columns([4, 1])
             c1.write(f"• **{r['title']}** (מועד: {r['time']})")
@@ -256,26 +279,31 @@ with tab4:
 # Tab 5: פומודורו
 # ----------------------------------------
 with tab5:
-    st.header("🍅 טיימר פומודורו לריכוז")
-    if st.button("התחל טיימר פוקוס (25 דקות) ⏱️"):
-        st.success("הטיימר הופעל! הישאר ממוקד במשימה הבאה שלך.")
+    st.header("🍅 טיימר פוקוס (פומודורו)")
+    if st.button("התחל סבב ריכוז (25 דקות) ⏱️", type="primary"):
+        st.success("הטיימר הופעל! קח עמוק אליך את הפוקוס למשימה הבאה.")
         time.sleep(1)
 
 # ----------------------------------------
-# Tab 6: הגדרות (כולל הגדרת שליחת מייל)
+# Tab 6: הגדרות (כולל חיבור למייל)
 # ----------------------------------------
 with tab6:
-    st.header("⚙️ הגדרות מערכת ושליחת מייל")
-    st.write("כדי שהאפליקציות יוכלו לשלוח מייל אוטומטי ל־**SHIRPI29@GMAIL.COM**, עליך להזין כאן חשבון גוגל שולח וסיסמת אפליקציה (App Password).")
+    st.header("⚙️ הגדרות מערכת ומייל")
+    st.markdown("""
+    **איך להגדיר שליחת מייל ל־SHIRPI29@GMAIL.COM:**
+    1. היכנס לחשבון הגוגל שדרכו אתה שולח את ההודעות והפעל **אימות דו-שלבי (2-Step Verification)**.
+    2. חפש בהגדרות החשבון **סיסמאות אפליקציה (App Passwords)** וצור סיסמה חדשה (תקבל קוד בן 16 תווים).
+    3. הכנס כאן למטה את המייל השולח ואת קוד ה-16 תווים כסיסמה.
+    """)
     
     current_sender = st.session_state.app_data.get("sender_email", "")
     current_pass = st.session_state.app_data.get("sender_password", "")
     
     new_sender = st.text_input("כתובת מייל שולחת (Gmail):", value=current_sender)
-    new_pass = st.text_input("סיסמת אפליקציה (App Password מוגדרת מגוגל):", type="password", value=current_pass)
+    new_pass = st.text_input("סיסמת אפליקציה (App Password בן 16 תווים):", type="password", value=current_pass)
     
     if st.button("שמור הגדרות מייל 💾", type="primary"):
         st.session_state.app_data["sender_email"] = new_sender.strip()
         st.session_state.app_data["sender_password"] = new_pass.strip()
         save_data(st.session_state.app_data)
-        st.success("הגדרות המייל נשמרו בהצלחה!")
+        st.success("הגדרות המייל עודכנו בהצלחה במערכת!")
