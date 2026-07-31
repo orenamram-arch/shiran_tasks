@@ -8,8 +8,8 @@ import uuid
 import smtplib
 from email.message import EmailMessage
 
-# --- 1. הגדרות עמוד ועיצוב ויזואלי מרהיב ---
-st.set_page_config(page_title="FocusFlow | ניהול משימות מתקדם", page_icon="🎯", layout="centered")
+# --- 1. הגדרות עמוד ועיצוב UI/UX יוקרתי ---
+st.set_page_config(page_title="FocusFlow Pro | ניהול משימות מתקדם", page_icon="⚡", layout="centered")
 
 st.markdown("""
 <style>
@@ -26,39 +26,41 @@ st.markdown("""
     }
 
     .stApp {
-        background-color: #0f172a;
+        background: linear-gradient(135deg, #090d16 0%, #0f172a 100%);
         color: #f8fafc;
     }
 
-    /* כרטיסיות משימות מעוצבות */
+    /* כרטיסיות משימות בסגנון Glassmorphism */
     .task-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border: 1px solid #334155;
-        padding: 16px;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 18px;
         border-radius: 16px;
         border-right: 6px solid #3b82f6;
-        margin-bottom: 12px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        margin-bottom: 14px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+        transition: transform 0.2s ease;
     }
-    .task-title { font-size: 19px; font-weight: 700; color: #38bdf8; margin-bottom: 4px; }
-    .task-desc { font-size: 14px; color: #94a3b8; margin-bottom: 10px; }
+    .task-title { font-size: 20px; font-weight: 700; color: #38bdf8; margin-bottom: 4px; }
+    .task-desc { font-size: 14px; color: #94a3b8; margin-bottom: 12px; }
     .task-meta { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; }
-    .tag { background-color: #1e3a8a; color: #bfdbfe; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .tag { background-color: #1e3a8a; color: #bfdbfe; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }
     
-    /* עיצוב כפתורים */
+    /* עיצוב כפתורים ומדדים */
     .stButton>button {
         border-radius: 12px;
         font-weight: 700;
         transition: all 0.2s ease;
         width: 100%;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
     }
     
     div[data-testid="metric-container"] {
-        background: #1e293b;
-        border: 1px solid #334155;
-        padding: 12px;
-        border-radius: 14px;
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 14px;
+        border-radius: 16px;
         text-align: center;
         border-right: 4px solid #10b981;
     }
@@ -76,7 +78,7 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    return {"tasks": [], "reminders": [], "xp": 0, "level": 1, "sender_email": "", "sender_password": ""}
+    return {"tasks": [], "archive": [], "reminders": [], "xp": 0, "level": 1, "sender_email": "", "sender_password": ""}
 
 def save_data(data):
     try:
@@ -97,7 +99,7 @@ def update_xp(amount):
         st.toast(f"🎉 מזל טוב! עלית לרמה {new_level}!")
     save_data(st.session_state.app_data)
 
-# פונקציית שליחת מייל אמיתית ל-SHIRPI29@GMAIL.COM
+# פונקציית שליחת מייל ל-SHIRPI29@GMAIL.COM
 def send_email_notification(subject, body):
     target_email = "SHIRPI29@GMAIL.COM"
     sender_email = st.session_state.app_data.get("sender_email", "").strip()
@@ -118,60 +120,90 @@ def send_email_notification(subject, body):
             server.send_message(msg)
         return True, "המייל נשלח בהצלחה ל-SHIRPI29@GMAIL.COM!"
     except Exception as e:
-        return False, f"שגיאה בשליחת המייל (ודא סיסמת אפליקציה תקינה בגוגל): {str(e)}"
+        return False, f"שגיאה בשליחת המייל: {str(e)}"
 
 tasks = st.session_state.app_data['tasks']
+archive = st.session_state.app_data.setdefault('archive', [])
 reminders = st.session_state.app_data.setdefault('reminders', [])
 
 # --- 3. ניהול ראשי ב-Tabs ---
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "🎯 משימות", "➕ הוספה", "📋 קנבן", "⏰ תזכורות", "🍅 פוקוס", "⚙️ הגדרות"
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🎯 משימות", "➕ הוספה", "📊 התקדמות", "⏰ תזכורות", "🗂️ ארכיון", "🍅 פוקוס", "⚙️ הגדרות"
 ])
 
 # ----------------------------------------
-# Tab 1: רשימת משימות ודשבורד
+# Tab 1: רשימת משימות ועדכון התקדמות חלקית
 # ----------------------------------------
 with tab1:
-    st.title("🎯 FocusFlow | לוח בקרה")
+    st.title("⚡ FocusFlow | משימות פעילות")
     
     col1, col2, col3 = st.columns(3)
-    completed_tasks = len([t for t in tasks if t['status'] == 'הושלם'])
-    active_tasks = len([t for t in tasks if t['status'] != 'הושלם'])
+    active_tasks = len(tasks)
+    archived_tasks = len(archive)
     
     with col1: st.metric("רמה 🏆", st.session_state.app_data['level'])
-    with col2: st.metric("הושלמו ✅", completed_tasks)
-    with col3: st.metric("פתוחות ⏳", active_tasks)
+    with col2: st.metric("פעילות ⏳", active_tasks)
+    with col3: st.metric("באורכיון 🗂️", archived_tasks)
     
     st.markdown("---")
-    st.subheader("משימות פעילות")
     
     if not tasks:
-        st.info("💡 אין משימות כרגע. הוסף משימה חדשה בלשונית 'הוספה'.")
+        st.info("💡 אין משימות פעילות כרגע. הוסף משימה חדשה בלשונית 'הוספה'.")
     else:
         for idx, task in enumerate(tasks):
-            if task['status'] != 'הושלם':
-                with st.container():
-                    st.markdown(f"""
-                    <div class="task-card">
-                        <div class="task-title">{task['title']}</div>
-                        <div class="task-desc">{task['description'] if task['description'] else 'אין תיאור נוסף'}</div>
-                        <div class="task-meta">
-                            <span class="tag">{task['category']}</span>
-                            <span>📅 יעד: {task['due_date']}</span>
-                        </div>
+            with st.container():
+                progress_val = task.get('progress', 0)
+                border_color = "#10b981" if progress_val == 100 else "#3b82f6"
+                
+                st.markdown(f"""
+                <div class="task-card" style="border-right: 6px solid {border_color};">
+                    <div class="task-title">{task['title']}</div>
+                    <div class="task-desc">{task['description'] if task['description'] else 'אין תיאור נוסף'}</div>
+                    <div class="task-meta">
+                        <span class="tag">{task['category']}</span>
+                        <span>📅 יעד: {task['due_date']}</span>
+                        <span style="font-weight: bold; color: {'#10b981' if progress_val == 100 else '#38bdf8'};">הושלם: {progress_val}%</span>
                     </div>
-                    """, unsafe_allow_html=True)
-                    
-                    c1, c2 = st.columns(2)
-                    if c1.button("✔️ סיים משימה", key=f"t_done_{idx}", type="primary"):
-                        task['status'] = 'הושלם'
-                        update_xp(20)
-                        save_data(st.session_state.app_data)
-                        st.rerun()
-                    if c2.button("🗑️ מחק", key=f"t_del_{idx}"):
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # סליידר עדכון התקדמות דינמי (מ-0 עד 100%)
+                new_progress = st.slider(
+                    f"עדכן אחוז ביצוע עבור: {task['title']}", 
+                    0, 100, int(progress_val), 5, 
+                    key=f"slider_{task['id']}"
+                )
+                
+                # אם הערך השתנה, נעדכן במערכת
+                if new_progress != progress_val:
+                    task['progress'] = new_progress
+                    # אם הגיע ל-100%, מעבירים אוטומטית לארכיון!
+                    if new_progress == 100:
+                        archive.append(task)
                         tasks.pop(idx)
+                        update_xp(30)
                         save_data(st.session_state.app_data)
+                        st.success(f"כל הכבוד! המשימה '{task['title']}' הושלמה במלואה והועברה לארכיון! 🏆")
+                        time.sleep(1)
                         st.rerun()
+                    else:
+                        save_data(st.session_state.app_data)
+                
+                c1, c2 = st.columns(2)
+                if c1.button("✔️ סמן כהושלם מיד (100%)", key=f"t_done_{task['id']}", type="primary"):
+                    task['progress'] = 100
+                    archive.append(task)
+                    tasks.pop(idx)
+                    update_xp(30)
+                    save_data(st.session_state.app_data)
+                    st.success("המשימה הושלמה בהצלחה והועברה לארכיון!")
+                    st.rerun()
+                if c2.button("🗑️ מחק משימה", key=f"t_del_{task['id']}"):
+                    tasks.pop(idx)
+                    save_data(st.session_state.app_data)
+                    st.rerun()
+                
+                st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
 
 # ----------------------------------------
 # Tab 2: הוספת משימה
@@ -184,7 +216,7 @@ with tab2:
         desc = st.text_area("תיאור מפורט")
         due_date = st.date_input("תאריך יעד")
         
-        if st.form_submit_button("הוסף למערכת 🛒", type="primary"):
+        if st.form_submit_button("הוסף למערכת 🚀", type="primary"):
             if title.strip():
                 new_task = {
                     "id": str(uuid.uuid4())[:8],
@@ -192,7 +224,7 @@ with tab2:
                     "description": desc,
                     "category": category,
                     "due_date": due_date.strftime("%Y-%m-%d"),
-                    "status": "לביצוע"
+                    "progress": 0
                 }
                 tasks.append(new_task)
                 save_data(st.session_state.app_data)
@@ -202,30 +234,38 @@ with tab2:
                 st.warning("נא להזין שם משימה.")
 
 # ----------------------------------------
-# Tab 3: קנבן
+# Tab 3: גרף התקדמות כללי (Analytics)
 # ----------------------------------------
 with tab3:
-    st.header("📋 לוח קנבן ויזואלי")
-    col_todo, col_done = st.columns(2)
-    with col_todo:
-        st.subheader("לביצוע 📝")
-        for t in tasks:
-            if t['status'] != 'הושלם':
-                st.markdown(f"• **{t['title']}** ({t['category']})")
-    with col_done:
-        st.subheader("הושלם ✅")
-        for t in tasks:
-            if t['status'] == 'הושלם':
-                st.markdown(f"• ~~{t['title']}~~")
+    st.header("📊 מדדי התקדמות וגרף ביצוע")
+    st.write("כאן תוכל לראות את מצב ההתקדמות הכללי של המשימות הפתוחות שלך:")
+    
+    if not tasks and not archive:
+        st.info("אין מספיק נתונים להצגת גרף. הוסף משימות והתחל לעבוד.")
+    else:
+        total_active = len(tasks)
+        total_archived = len(archive)
+        
+        # חישוב ממוצע התקדמות כללי למשימות הפתוחות
+        avg_progress = sum([t.get('progress', 0) for t in tasks]) / total_active if total_active > 0 else 0
+        
+        st.subheader("ממוצע התקדמות למשימות הפתוחות:")
+        st.progress(avg_progress / 100.0)
+        st.markdown(f"<h3 style='text-align: center; color: #38bdf8;'>{avg_progress:.1f}% הושלמו בסך הכל</h3>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.subheader("סטטיסטיקה מפורטת:")
+        col_g1, col_g2 = st.columns(2)
+        col_g1.metric("משימות פתוחות בעבודה", total_active)
+        col_g2.metric("משימות שהושלמו לחלוטין (באנציקלופדיה/ארכיון)", total_archived)
 
 # ----------------------------------------
-# Tab 4: תזכורות (מקושרות למשימות + מייל + שעון אייפון)
+# Tab 4: תזכורות למשימות (כולל שעון אייפון ומייל)
 # ----------------------------------------
 with tab4:
     st.header("⏰ ניהול תזכורות למשימות")
-    st.write("בחר משימה קיימת, קבע לה מועד, והמערכת תתריע לך במייל ותסנכרן עם האייפון.")
+    st.write("בחר משימה פתוחה, קבע לה מועד, ושלח התראה ישירות ל־**SHIRPI29@GMAIL.COM**.")
     
-    # כפתור קיצור דרך לשעון באייפון
     st.markdown("""
     <a href="clock-alarm://" target="_blank">
         <button style="background-color: #3b82f6; color: white; border: none; padding: 12px 20px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
@@ -234,18 +274,15 @@ with tab4:
     </a>
     """, unsafe_allow_html=True)
     
-    active_tasks_list = [t for t in tasks if t['status'] != 'הושלם']
-    
-    if not active_tasks_list:
-        st.info("💡 אין משימות פתוחות שאפשר לקשר אליהן תזכורת. הוסף משימה תחילה.")
+    if not tasks:
+        st.info("💡 אין משימות פתוחות שאפשר לקשר אליהן תזכורת.")
     else:
         with st.form("reminder_form"):
-            task_titles = [t['title'] for t in active_tasks_list]
-            selected_task_title = st.selectbox("בחר משימה מתוך הרשימה שלך:", task_titles)
+            task_titles = [t['title'] for t in tasks]
+            selected_task_title = st.selectbox("בחר משימה מתוך הרשימה:", task_titles)
             
             rem_date = st.date_input("תאריך התזכורת")
             rem_time = st.time_input("שעת התזכורת")
-            
             send_email_checkbox = st.checkbox("שלח התראה מיידית ל־SHIRPI29@GMAIL.COM 📧", value=True)
             
             if st.form_submit_button("הגדר תזכורת למשימה 🔔", type="primary"):
@@ -256,17 +293,15 @@ with tab4:
                 if send_email_checkbox:
                     success, msg = send_email_notification(
                         subject=f"תזכורת למשימה: {selected_task_title}",
-                        body=f"היי שיר,\n\nיש לך תזכורת למשימה שלך:\n📌 משימה: {selected_task_title}\n⏰ מועד: {rem_str}\n\nבהצלחה בביצוע!"
+                        body=f"היי שיר,\n\nיש לך תזכורת למשימה:\n📌 משימה: {selected_task_title}\n⏰ מועד: {rem_str}\n\nבהצלחה!"
                     )
-                    if success:
-                        st.success(msg)
-                    else:
-                        st.warning(f"התזכורת נשמרה, אך שליחת המייל נכשלה: {msg}")
+                    if success: st.success(msg)
+                    else: st.warning(f"התזכורת נשמרה, אך שליחת המייל נכשלה: {msg}")
                 else:
                     st.success("התזכורת נוספה בהצלחה!")
 
     if reminders:
-        st.markdown("### 🔔 תזכורות פעילות למשימות:")
+        st.markdown("### 🔔 תזכורות פעילות:")
         for idx, r in enumerate(reminders):
             c1, c2 = st.columns([4, 1])
             c1.write(f"• **{r['title']}** (מועד: {r['time']})")
@@ -276,34 +311,61 @@ with tab4:
                 st.rerun()
 
 # ----------------------------------------
-# Tab 5: פומודורו
+# Tab 5: ארכיון משימות שהושלמו (Archive)
 # ----------------------------------------
 with tab5:
+    st.header("🗂️ ארכיון משימות שהושלמו")
+    st.write("כאן שמורות כל המשימות שהושלמו במלואן (100% ביצוע):")
+    
+    if not archive:
+        st.info("הארכיון ריק כרגע. משימות יעברו לכאן אוטומטית ברגע שתסיים אותן.")
+    else:
+        for idx, item in enumerate(archive):
+            st.markdown(f"""
+            <div class="task-card" style="border-right: 6px solid #10b981; opacity: 0.85;">
+                <div class="task-title" style="color: #34d399;">✅ ~~{item['title']}~~</div>
+                <div class="task-desc">{item['description'] if item['description'] else 'ללא תיאור'}</div>
+                <div class="task-meta">
+                    <span class="tag">{item['category']}</span>
+                    <span>📅 יעד מקורי: {item['due_date']}</span>
+                    <span style="color: #10b981; font-weight: bold;">הושלם (100%)</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("מחק לצמיתות מהארכיון", key=f"arch_del_{idx}"):
+                archive.pop(idx)
+                save_data(st.session_state.app_data)
+                st.rerun()
+
+# ----------------------------------------
+# Tab 6: פוקוס פומודורו
+# ----------------------------------------
+with tab6:
     st.header("🍅 טיימר פוקוס (פומודורו)")
     if st.button("התחל סבב ריכוז (25 דקות) ⏱️", type="primary"):
-        st.success("הטיימר הופעל! קח עמוק אליך את הפוקוס למשימה הבאה.")
+        st.success("הטיימר הופעל! הישאר ממוקד במשימה הבאה שלך.")
         time.sleep(1)
 
 # ----------------------------------------
-# Tab 6: הגדרות (כולל חיבור למייל)
+# Tab 7: הגדרות ומייל
 # ----------------------------------------
-with tab6:
+with tab7:
     st.header("⚙️ הגדרות מערכת ומייל")
     st.markdown("""
-    **איך להגדיר שליחת מייל ל־SHIRPI29@GMAIL.COM:**
-    1. היכנס לחשבון הגוגל שדרכו אתה שולח את ההודעות והפעל **אימות דו-שלבי (2-Step Verification)**.
-    2. חפש בהגדרות החשבון **סיסמאות אפליקציה (App Passwords)** וצור סיסמה חדשה (תקבל קוד בן 16 תווים).
-    3. הכנס כאן למטה את המייל השולח ואת קוד ה-16 תווים כסיסמה.
+    **הגדרת שליחת מייל ל־SHIRPI29@GMAIL.COM:**
+    1. הפעל אימות דו-שלבי בחשבון הגוגל השולח.
+    2. צור **סיסמת אפליקציה (App Password)** בהגדרות האבטחה של גוגל (קוד בן 16 תווים).
+    3. הכנס כאן למטה את המייל השולח ואת הקוד.
     """)
     
     current_sender = st.session_state.app_data.get("sender_email", "")
     current_pass = st.session_state.app_data.get("sender_password", "")
     
     new_sender = st.text_input("כתובת מייל שולחת (Gmail):", value=current_sender)
-    new_pass = st.text_input("סיסמת אפליקציה (App Password בן 16 תווים):", type="password", value=current_pass)
+    new_pass = st.text_input("סיסמת אפליקציה (App Password):", type="password", value=current_pass)
     
     if st.button("שמור הגדרות מייל 💾", type="primary"):
         st.session_state.app_data["sender_email"] = new_sender.strip()
         st.session_state.app_data["sender_password"] = new_pass.strip()
         save_data(st.session_state.app_data)
-        st.success("הגדרות המייל עודכנו בהצלחה במערכת!")
+        st.success("הגדרות המייל עודכנו בהצלחה!")
