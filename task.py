@@ -7,6 +7,7 @@ import time
 import uuid
 import smtplib
 from email.message import EmailMessage
+import base64
 
 # --- 1. הגדרות עמוד ועיצוב UI/UX יוקרתי ---
 st.set_page_config(page_title="FocusFlow Pro | ניהול משימות מתקדם", page_icon="⚡", layout="centered")
@@ -30,7 +31,6 @@ st.markdown("""
         color: #f8fafc;
     }
 
-    /* כרטיסיות משימות בסגנון Glassmorphism */
     .task-card {
         background: rgba(30, 41, 59, 0.7);
         backdrop-filter: blur(10px);
@@ -40,14 +40,12 @@ st.markdown("""
         border-right: 6px solid #3b82f6;
         margin-bottom: 14px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
-        transition: transform 0.2s ease;
     }
     .task-title { font-size: 20px; font-weight: 700; color: #38bdf8; margin-bottom: 4px; }
     .task-desc { font-size: 14px; color: #94a3b8; margin-bottom: 12px; }
     .task-meta { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; }
     .tag { background-color: #1e3a8a; color: #bfdbfe; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }
     
-    /* עיצוב כפתורים ומדדים */
     .stButton>button {
         border-radius: 12px;
         font-weight: 700;
@@ -99,7 +97,6 @@ def update_xp(amount):
         st.toast(f"🎉 מזל טוב! עלית לרמה {new_level}!")
     save_data(st.session_state.app_data)
 
-# פונקציית שליחת מייל ל-SHIRPI29@GMAIL.COM
 def send_email_notification(subject, body):
     target_email = "SHIRPI29@GMAIL.COM"
     sender_email = st.session_state.app_data.get("sender_email", "").strip()
@@ -121,6 +118,30 @@ def send_email_notification(subject, body):
         return True, "המייל נשלח בהצלחה ל-SHIRPI29@GMAIL.COM!"
     except Exception as e:
         return False, f"שגיאה בשליחת המייל: {str(e)}"
+
+# פונקציה ליצירת קובץ לוח שנה (iCal) שמוסיף תזכורת לאייפון בלחיצה
+def get_ics_file_download_link(title, rem_date, rem_time):
+    # המרת תאריך ושעה לפורמט תקני של לוח שנה
+    dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}Z"
+    ics_content = f"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//FocusFlow Task Manager//EN
+BEGIN:VEVENT
+SUMMARY:תזכורת למשימה: {title}
+DESCRIPTION:משימה מתוך אפליקציית FocusFlow Pro
+DTSTART:{dt_str}
+DTEND:{dt_str}
+BEGIN:VALARM
+TRIGGER:-PT0M
+ACTION:DISPLAY
+DESCRIPTION:תזכורת פעילה
+END:VALARM
+END:VEVENT
+END:VCALENDAR"""
+    
+    b64 = base64.b64encode(ics_content.encode('utf-8')).decode("utf-8")
+    href = f'<a href="data:text/calendar;charset=utf-8,{b64}" download="reminder.ics" style="background-color: #10b981; color: white; padding: 10px 15px; border-radius: 10px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-top: 10px;">📥 הוסף אירוע/התראה ליומן האייפון (iCal)</a>'
+    return href
 
 tasks = st.session_state.app_data['tasks']
 archive = st.session_state.app_data.setdefault('archive', [])
@@ -167,17 +188,14 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # סליידר עדכון התקדמות דינמי (מ-0 עד 100%)
                 new_progress = st.slider(
                     f"עדכן אחוז ביצוע עבור: {task['title']}", 
                     0, 100, int(progress_val), 5, 
                     key=f"slider_{task['id']}"
                 )
                 
-                # אם הערך השתנה, נעדכן במערכת
                 if new_progress != progress_val:
                     task['progress'] = new_progress
-                    # אם הגיע ל-100%, מעבירים אוטומטית לארכיון!
                     if new_progress == 100:
                         archive.append(task)
                         tasks.pop(idx)
@@ -245,8 +263,6 @@ with tab3:
     else:
         total_active = len(tasks)
         total_archived = len(archive)
-        
-        # חישוב ממוצע התקדמות כללי למשימות הפתוחות
         avg_progress = sum([t.get('progress', 0) for t in tasks]) / total_active if total_active > 0 else 0
         
         st.subheader("ממוצע התקדמות למשימות הפתוחות:")
@@ -257,22 +273,14 @@ with tab3:
         st.subheader("סטטיסטיקה מפורטת:")
         col_g1, col_g2 = st.columns(2)
         col_g1.metric("משימות פתוחות בעבודה", total_active)
-        col_g2.metric("משימות שהושלמו לחלוטין (באנציקלופדיה/ארכיון)", total_archived)
+        col_g2.metric("משימות שהושלמו (באנציקלופדיה/ארכיון)", total_archived)
 
 # ----------------------------------------
-# Tab 4: תזכורות למשימות (כולל שעון אייפון ומייל)
+# Tab 4: תזכורות (עם הורדת אירוע ליומן אייפון + מייל)
 # ----------------------------------------
 with tab4:
     st.header("⏰ ניהול תזכורות למשימות")
-    st.write("בחר משימה פתוחה, קבע לה מועד, ושלח התראה ישירות ל־**SHIRPI29@GMAIL.COM**.")
-    
-    st.markdown("""
-    <a href="clock-alarm://" target="_blank">
-        <button style="background-color: #3b82f6; color: white; border: none; padding: 12px 20px; border-radius: 12px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-            ⏰ פתח את אפליקציית השעון / שעון מעורר באייפון
-        </button>
-    </a>
-    """, unsafe_allow_html=True)
+    st.write("בחר משימה פתוחה, קבע לה מועד, קבל אימייל ל־**SHIRPI29@GMAIL.COM** והורד התראה ישירות ליומן האייפון.")
     
     if not tasks:
         st.info("💡 אין משימות פתוחות שאפשר לקשר אליהן תזכורת.")
@@ -285,9 +293,11 @@ with tab4:
             rem_time = st.time_input("שעת התזכורת")
             send_email_checkbox = st.checkbox("שלח התראה מיידית ל־SHIRPI29@GMAIL.COM 📧", value=True)
             
-            if st.form_submit_button("הגדר תזכורת למשימה 🔔", type="primary"):
+            submitted_rem = st.form_submit_button("הגדר תזכורת למשימה 🔔", type="primary")
+            
+            if submitted_rem:
                 rem_str = f"{rem_date} בשעה {rem_time}"
-                reminders.append({"title": selected_task_title, "time": rem_str})
+                reminders.append({"title": selected_task_title, "time": rem_str, "date_obj": rem_date, "time_obj": rem_time})
                 save_data(st.session_state.app_data)
                 
                 if send_email_checkbox:
@@ -300,15 +310,18 @@ with tab4:
                 else:
                     st.success("התזכורת נוספה בהצלחה!")
 
-    if reminders:
-        st.markdown("### 🔔 תזכורות פעילות:")
-        for idx, r in enumerate(reminders):
-            c1, c2 = st.columns([4, 1])
-            c1.write(f"• **{r['title']}** (מועד: {r['time']})")
-            if c2.button("מחק", key=f"rem_del_{idx}"):
-                reminders.pop(idx)
-                save_data(st.session_state.app_data)
-                st.rerun()
+        # יצירת כפתורי הורדה ליומן Apple (iCal) עבור התזכורות שנוצרו
+        if reminders:
+            st.markdown("### 📥 הוספה ליומן האייפון (לחץ להורדה והוספה אוטומטית):")
+            for idx, r in enumerate(reminders):
+                st.write(f"• **{r['title']}** (מועד: {r['time']})")
+                # מציג כפתור הורדת קובץ לוח שנה
+                st.markdown(get_ics_file_download_link(r['title'], r.get('date_obj', date.today()), r.get('time_obj', datetime.now().time())), unsafe_allow_html=True)
+                
+                if st.button("מחק תזכורת זו", key=f"rem_del_{idx}"):
+                    reminders.pop(idx)
+                    save_data(st.session_state.app_data)
+                    st.rerun()
 
 # ----------------------------------------
 # Tab 5: ארכיון משימות שהושלמו (Archive)
