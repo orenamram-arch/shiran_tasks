@@ -12,7 +12,7 @@ import base64
 # --- 1. הגדרות עמוד ועיצוב UI/UX יוקרתי ---
 st.set_page_config(page_title="FocusFlow Pro | ניהול משימות מתקדם", page_icon="⚡", layout="centered")
 
-st.markdown("""
+CUSTOM_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap');
     
@@ -40,10 +40,14 @@ st.markdown("""
         border-right: 6px solid #3b82f6;
         margin-bottom: 14px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+        transition: transform 0.2s ease;
+    }
+    .task-card:hover {
+        transform: translateY(-2px);
     }
     .task-title { font-size: 20px; font-weight: 700; color: #38bdf8; margin-bottom: 4px; }
     .task-desc { font-size: 14px; color: #94a3b8; margin-bottom: 12px; }
-    .task-meta { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; }
+    .task-meta { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;}
     .tag { background-color: #1e3a8a; color: #bfdbfe; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }
     
     .stButton>button {
@@ -62,10 +66,20 @@ st.markdown("""
         text-align: center;
         border-right: 4px solid #10b981;
     }
+    
+    .timer-display {
+        font-size: 72px;
+        font-weight: 800;
+        text-align: center;
+        color: #f43f5e;
+        text-shadow: 0 0 20px rgba(244, 63, 94, 0.5);
+        margin: 20px 0;
+    }
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# --- 2. מנגנון שמירה יציב ---
+# --- 2. מנגנון שמירה והגדרות יציבות ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, 'focusflow_data.json')
 
@@ -76,7 +90,16 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    return {"tasks": [], "archive": [], "reminders": [], "xp": 0, "level": 1, "sender_email": "", "sender_password": ""}
+    return {
+        "tasks": [], 
+        "archive": [], 
+        "reminders": [], 
+        "xp": 0, 
+        "level": 1, 
+        "sender_email": "", 
+        "sender_password": "",
+        "target_email": ""
+    }
 
 def save_data(data):
     try:
@@ -88,6 +111,14 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
+# משיכת נתונים מ-secrets במידה וקיימים
+def get_config(key, default=""):
+    # קודם בודק אם מוגדר ב-secrets של Streamlit
+    if key in st.secrets:
+        return st.secrets[key]
+    # אחרת שואב מההגדרות המקומיות שלנו
+    return st.session_state.app_data.get(key.lower(), default)
+
 def update_xp(amount):
     st.session_state.app_data['xp'] += amount
     new_level = (st.session_state.app_data['xp'] // 100) + 1
@@ -98,13 +129,15 @@ def update_xp(amount):
     save_data(st.session_state.app_data)
 
 def send_email_notification(subject, body):
-    target_email = "SHIRPI29@GMAIL.COM"
-    sender_email = st.session_state.app_data.get("sender_email", "").strip()
-    sender_password = st.session_state.app_data.get("sender_password", "").strip()
+    sender_email = get_config("SENDER_EMAIL").strip()
+    sender_password = get_config("SENDER_PASSWORD").strip()
+    target_email = get_config("TARGET_EMAIL", "SHIRPI29@GMAIL.COM").strip()
     
     if not sender_email or not sender_password:
-        return False, "לא הוגדרו פרטי מייל שולח בלשונית 'הגדרות'."
-    
+        return False, "לא הוגדרו פרטי מייל שולח (חסר Secrets או הגדרות)."
+    if not target_email:
+        return False, "לא הוגדר מייל יעד."
+        
     try:
         msg = EmailMessage()
         msg['Subject'] = subject
@@ -115,13 +148,11 @@ def send_email_notification(subject, body):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(sender_email, sender_password)
             server.send_message(msg)
-        return True, "המייל נשלח בהצלחה ל-SHIRPI29@GMAIL.COM!"
+        return True, f"המייל נשלח בהצלחה אל {target_email}!"
     except Exception as e:
         return False, f"שגיאה בשליחת המייל: {str(e)}"
 
-# פונקציה ליצירת קובץ לוח שנה (iCal) שמוסיף תזכורת לאייפון בלחיצה
 def get_ics_file_download_link(title, rem_date, rem_time):
-    # המרת תאריך ושעה לפורמט תקני של לוח שנה
     dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}Z"
     ics_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
@@ -140,7 +171,7 @@ END:VEVENT
 END:VCALENDAR"""
     
     b64 = base64.b64encode(ics_content.encode('utf-8')).decode("utf-8")
-    href = f'<a href="data:text/calendar;charset=utf-8,{b64}" download="reminder.ics" style="background-color: #10b981; color: white; padding: 10px 15px; border-radius: 10px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-top: 10px;">📥 הוסף אירוע/התראה ליומן האייפון (iCal)</a>'
+    href = f'<a href="data:text/calendar;charset=utf-8,{b64}" download="reminder.ics" style="background-color: #10b981; color: white; padding: 10px 15px; border-radius: 10px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-top: 10px;">📥 הוסף אירוע ליומן האייפון (iCal)</a>'
     return href
 
 tasks = st.session_state.app_data['tasks']
@@ -153,7 +184,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 ])
 
 # ----------------------------------------
-# Tab 1: רשימת משימות ועדכון התקדמות חלקית
+# Tab 1: רשימת משימות (כולל סינון, מיון ועריכה)
 # ----------------------------------------
 with tab1:
     st.title("⚡ FocusFlow | משימות פעילות")
@@ -164,14 +195,38 @@ with tab1:
     
     with col1: st.metric("רמה 🏆", st.session_state.app_data['level'])
     with col2: st.metric("פעילות ⏳", active_tasks)
-    with col3: st.metric("באורכיון 🗂️", archived_tasks)
+    with col3: st.metric("בארכיון 🗂️", archived_tasks)
     
     st.markdown("---")
     
     if not tasks:
         st.info("💡 אין משימות פעילות כרגע. הוסף משימה חדשה בלשונית 'הוספה'.")
     else:
-        for idx, task in enumerate(tasks):
+        # כלים: סינון ומיון
+        f_col1, f_col2 = st.columns(2)
+        all_categories = ["הכל"] + list(set([t['category'] for t in tasks]))
+        filter_cat = f_col1.selectbox("🔍 סנן לפי קטגוריה:", all_categories)
+        sort_by = f_col2.selectbox("⇅ מיין לפי:", ["תאריך יעד (קרוב לרחוק)", "הוסף לאחרונה"])
+
+        # יישום סינון ומיון
+        display_tasks = tasks.copy()
+        if filter_cat != "הכל":
+            display_tasks = [t for t in display_tasks if t['category'] == filter_cat]
+        
+        if sort_by == "תאריך יעד (קרוב לרחוק)":
+            # ננסה למיין תאריכים בפורמט מיתרוזת, אם נכשל נשאיר רגיל
+            try:
+                display_tasks.sort(key=lambda x: datetime.strptime(x['due_date'], "%Y-%m-%d"))
+            except:
+                display_tasks.sort(key=lambda x: x['due_date'])
+        
+        if not display_tasks:
+            st.warning("לא נמצאו משימות תחת הסינון הנוכחי.")
+
+        for task in display_tasks:
+            # מציאת האינדקס המקורי במערך הרשמי (כדי לשמור נתונים נכון)
+            idx = tasks.index(task) 
+            
             with st.container():
                 progress_val = task.get('progress', 0)
                 border_color = "#10b981" if progress_val == 100 else "#3b82f6"
@@ -188,47 +243,77 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                new_progress = st.slider(
-                    f"עדכן אחוז ביצוע עבור: {task['title']}", 
-                    0, 100, int(progress_val), 5, 
-                    key=f"slider_{task['id']}"
-                )
+                # כלי ניהול משימה
+                col_slider, col_actions = st.columns([2, 1])
                 
+                with col_slider:
+                    new_progress = st.slider(
+                        "עדכון התקדמות", 
+                        0, 100, int(progress_val), 5, 
+                        key=f"slider_{task['id']}",
+                        label_visibility="collapsed"
+                    )
+                
+                with col_actions:
+                    # כפתור עריכה שפותח Expander
+                    edit_expander = st.expander("✏️ ערוך משימה")
+
+                # אם שינו את אחוזי ההתקדמות בסליידר
                 if new_progress != progress_val:
-                    task['progress'] = new_progress
+                    tasks[idx]['progress'] = new_progress
                     if new_progress == 100:
-                        archive.append(task)
+                        archive.append(tasks[idx])
                         tasks.pop(idx)
                         update_xp(30)
                         save_data(st.session_state.app_data)
-                        st.success(f"כל הכבוד! המשימה '{task['title']}' הושלמה במלואה והועברה לארכיון! 🏆")
+                        st.success(f"כל הכבוד! '{task['title']}' הושלמה! 🏆")
                         time.sleep(1)
                         st.rerun()
                     else:
                         save_data(st.session_state.app_data)
-                
+
+                # אזור העריכה (Expander)
+                with edit_expander:
+                    with st.form(f"form_edit_{task['id']}"):
+                        e_title = st.text_input("שם", task['title'])
+                        e_desc = st.text_area("תיאור", task['description'])
+                        try:
+                            curr_date = datetime.strptime(task['due_date'], "%Y-%m-%d").date()
+                        except:
+                            curr_date = date.today()
+                        e_date = st.date_input("יעד", curr_date)
+                        
+                        if st.form_submit_button("שמור שינויים", type="primary"):
+                            tasks[idx]['title'] = e_title
+                            tasks[idx]['description'] = e_desc
+                            tasks[idx]['due_date'] = e_date.strftime("%Y-%m-%d")
+                            save_data(st.session_state.app_data)
+                            st.success("השינויים נשמרו!")
+                            time.sleep(0.5)
+                            st.rerun()
+
+                # כפתורי פעולה מהירים
                 c1, c2 = st.columns(2)
-                if c1.button("✔️ סמן כהושלם מיד (100%)", key=f"t_done_{task['id']}", type="primary"):
-                    task['progress'] = 100
-                    archive.append(task)
+                if c1.button("✔️ סיים מיד (100%)", key=f"t_done_{task['id']}", type="primary"):
+                    tasks[idx]['progress'] = 100
+                    archive.append(tasks[idx])
                     tasks.pop(idx)
                     update_xp(30)
                     save_data(st.session_state.app_data)
-                    st.success("המשימה הושלמה בהצלחה והועברה לארכיון!")
                     st.rerun()
-                if c2.button("🗑️ מחק משימה", key=f"t_del_{task['id']}"):
+                if c2.button("🗑️ מחק", key=f"t_del_{task['id']}"):
                     tasks.pop(idx)
                     save_data(st.session_state.app_data)
                     st.rerun()
                 
-                st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
 
 # ----------------------------------------
 # Tab 2: הוספת משימה
 # ----------------------------------------
 with tab2:
     st.header("➕ הוספת משימה חדשה")
-    with st.form("add_task_form"):
+    with st.form("add_task_form", clear_on_submit=True):
         title = st.text_input("שם המשימה *")
         category = st.selectbox("קטגוריה", ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"])
         desc = st.text_area("תיאור מפורט")
@@ -247,7 +332,7 @@ with tab2:
                 tasks.append(new_task)
                 save_data(st.session_state.app_data)
                 update_xp(5)
-                st.success("המשימה נוספה בהצלחה וקיבלת 5 XP!")
+                st.success("המשימה נוספה בהצלחה! קיבלת 5 XP!")
             else:
                 st.warning("נא להזין שם משימה.")
 
@@ -256,7 +341,7 @@ with tab2:
 # ----------------------------------------
 with tab3:
     st.header("📊 מדדי התקדמות וגרף ביצוע")
-    st.write("כאן תוכל לראות את מצב ההתקדמות הכללי של המשימות הפתוחות שלך:")
+    st.write("מצב ההתקדמות הכללי של המשימות הפתוחות שלך:")
     
     if not tasks and not archive:
         st.info("אין מספיק נתונים להצגת גרף. הוסף משימות והתחל לעבוד.")
@@ -270,78 +355,79 @@ with tab3:
         st.markdown(f"<h3 style='text-align: center; color: #38bdf8;'>{avg_progress:.1f}% הושלמו בסך הכל</h3>", unsafe_allow_html=True)
         
         st.markdown("---")
-        st.subheader("סטטיסטיקה מפורטת:")
         col_g1, col_g2 = st.columns(2)
-        col_g1.metric("משימות פתוחות בעבודה", total_active)
-        col_g2.metric("משימות שהושלמו (באנציקלופדיה/ארכיון)", total_archived)
+        col_g1.metric("משימות פתוחות", total_active)
+        col_g2.metric("משימות בארכיון", total_archived)
 
 # ----------------------------------------
-# Tab 4: תזכורות (עם הורדת אירוע ליומן אייפון + מייל)
+# Tab 4: תזכורות (יומן אייפון + מייל)
 # ----------------------------------------
 with tab4:
     st.header("⏰ ניהול תזכורות למשימות")
-    st.write("בחר משימה פתוחה, קבע לה מועד, קבל אימייל ל־**SHIRPI29@GMAIL.COM** והורד התראה ישירות ליומן האייפון.")
+    target_em = get_config("TARGET_EMAIL", "המייל שהגדרת")
+    st.write(f"קבע מועד למשימה, קבל אימייל ל־**{target_em}** והורד התראה ליומן.")
     
     if not tasks:
-        st.info("💡 אין משימות פתוחות שאפשר לקשר אליהן תזכורת.")
+        st.info("💡 אין משימות פתוחות. הוסף משימה קודם.")
     else:
         with st.form("reminder_form"):
             task_titles = [t['title'] for t in tasks]
-            selected_task_title = st.selectbox("בחר משימה מתוך הרשימה:", task_titles)
+            selected_task_title = st.selectbox("בחר משימה:", task_titles)
             
-            rem_date = st.date_input("תאריך התזכורת")
-            rem_time = st.time_input("שעת התזכורת")
-            send_email_checkbox = st.checkbox("שלח התראה מיידית ל־SHIRPI29@GMAIL.COM 📧", value=True)
+            c_date, c_time = st.columns(2)
+            rem_date = c_date.date_input("תאריך התזכורת")
+            rem_time = c_time.time_input("שעת התזכורת")
             
-            submitted_rem = st.form_submit_button("הגדר תזכורת למשימה 🔔", type="primary")
+            send_email_checkbox = st.checkbox("שלח התראה מיידית במייל 📧", value=True)
             
-            if submitted_rem:
+            if st.form_submit_button("הגדר תזכורת 🔔", type="primary"):
                 rem_str = f"{rem_date} בשעה {rem_time}"
-                reminders.append({"title": selected_task_title, "time": rem_str, "date_obj": rem_date, "time_obj": rem_time})
+                reminders.append({"title": selected_task_title, "time": rem_str, "date_str": str(rem_date), "time_str": str(rem_time)})
                 save_data(st.session_state.app_data)
                 
                 if send_email_checkbox:
                     success, msg = send_email_notification(
-                        subject=f"תזכורת למשימה: {selected_task_title}",
-                        body=f"היי שיר,\n\nיש לך תזכורת למשימה:\n📌 משימה: {selected_task_title}\n⏰ מועד: {rem_str}\n\nבהצלחה!"
+                        subject=f"תזכורת מ-FocusFlow: {selected_task_title}",
+                        body=f"שלום,\n\nיש לך תזכורת למשימה:\n📌 משימה: {selected_task_title}\n⏰ מועד: {rem_str}\n\nבהצלחה!"
                     )
                     if success: st.success(msg)
-                    else: st.warning(f"התזכורת נשמרה, אך שליחת המייל נכשלה: {msg}")
+                    else: st.warning(f"התזכורת נשמרה ביומן, אך שליחת המייל נכשלה: {msg}")
                 else:
                     st.success("התזכורת נוספה בהצלחה!")
 
-        # יצירת כפתורי הורדה ליומן Apple (iCal) עבור התזכורות שנוצרו
         if reminders:
-            st.markdown("### 📥 הוספה ליומן האייפון (לחץ להורדה והוספה אוטומטית):")
+            st.markdown("### 📥 תזכורות שנקבעו (להורדה ליומן Apple):")
             for idx, r in enumerate(reminders):
-                st.write(f"• **{r['title']}** (מועד: {r['time']})")
-                # מציג כפתור הורדת קובץ לוח שנה
-                st.markdown(get_ics_file_download_link(r['title'], r.get('date_obj', date.today()), r.get('time_obj', datetime.now().time())), unsafe_allow_html=True)
+                st.write(f"• **{r['title']}** ({r['time']})")
                 
-                if st.button("מחק תזכורת זו", key=f"rem_del_{idx}"):
+                # שחזור תאריך אובייקט
+                try: d_obj = datetime.strptime(r['date_str'], "%Y-%m-%d").date()
+                except: d_obj = date.today()
+                try: t_obj = datetime.strptime(r['time_str'], "%H:%M:%S").time()
+                except: t_obj = datetime.now().time()
+                
+                st.markdown(get_ics_file_download_link(r['title'], d_obj, t_obj), unsafe_allow_html=True)
+                if st.button("מחק תזכורת", key=f"rem_del_{idx}"):
                     reminders.pop(idx)
                     save_data(st.session_state.app_data)
                     st.rerun()
+                st.markdown("---")
 
 # ----------------------------------------
-# Tab 5: ארכיון משימות שהושלמו (Archive)
+# Tab 5: ארכיון משימות
 # ----------------------------------------
 with tab5:
     st.header("🗂️ ארכיון משימות שהושלמו")
-    st.write("כאן שמורות כל המשימות שהושלמו במלואן (100% ביצוע):")
-    
     if not archive:
-        st.info("הארכיון ריק כרגע. משימות יעברו לכאן אוטומטית ברגע שתסיים אותן.")
+        st.info("הארכיון ריק. משימות יעברו לכאן כשתסיים אותן (100%).")
     else:
         for idx, item in enumerate(archive):
             st.markdown(f"""
-            <div class="task-card" style="border-right: 6px solid #10b981; opacity: 0.85;">
-                <div class="task-title" style="color: #34d399;">✅ ~~{item['title']}~~</div>
-                <div class="task-desc">{item['description'] if item['description'] else 'ללא תיאור'}</div>
+            <div class="task-card" style="border-right: 6px solid #10b981; opacity: 0.7;">
+                <div class="task-title" style="color: #34d399;">✅ <s>{item['title']}</s></div>
                 <div class="task-meta">
                     <span class="tag">{item['category']}</span>
-                    <span>📅 יעד מקורי: {item['due_date']}</span>
-                    <span style="color: #10b981; font-weight: bold;">הושלם (100%)</span>
+                    <span>הושלם (100%)</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -351,34 +437,72 @@ with tab5:
                 st.rerun()
 
 # ----------------------------------------
-# Tab 6: פוקוס פומודורו
+# Tab 6: פוקוס פומודורו (Real-Time Timer)
 # ----------------------------------------
 with tab6:
     st.header("🍅 טיימר פוקוס (פומודורו)")
-    if st.button("התחל סבב ריכוז (25 דקות) ⏱️", type="primary"):
-        st.success("הטיימר הופעל! הישאר ממוקד במשימה הבאה שלך.")
-        time.sleep(1)
+    st.write("מחקרים מראים שעבודה בריכוז רצוף של 25 דקות מעלה משמעותית את הפרודוקטיביות.")
+    
+    # מצב טיימר
+    if 'timer_running' not in st.session_state:
+        st.session_state.timer_running = False
+
+    if not st.session_state.timer_running:
+        if st.button("התחל 25 דקות ריכוז ⏱️", type="primary"):
+            st.session_state.timer_running = True
+            st.rerun()
+    else:
+        if st.button("הפסק טיימר ⏹️"):
+            st.session_state.timer_running = False
+            st.rerun()
+            
+        timer_placeholder = st.empty()
+        
+        # לולאת ספירה לאחור
+        # הערה: עבודה עם time.sleep ב-Streamlit "תוקעת" את המסך לפעולות אחרות. זה תקין למצב 'פוקוס' בו אנחנו לא רוצים הסחות דעת.
+        for i in range(25 * 60, -1, -1):
+            if not st.session_state.timer_running:
+                break
+                
+            mins, secs = divmod(i, 60)
+            timer_placeholder.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
+            time.sleep(1)
+            
+        if st.session_state.timer_running:  # אם הלולאה הסתיימה באופן טבעי ולא בגלל כפתור עצירה
+            st.session_state.timer_running = False
+            st.balloons()
+            st.success("🎉 סבב הפוקוס הסתיים! עבודה מעולה. קח 5 דקות הפסקה.")
+            update_xp(20) # מעניק אקסטרה XP על סיום פומודורו!
 
 # ----------------------------------------
-# Tab 7: הגדרות ומייל
+# Tab 7: הגדרות (ניהול דינמי והסתרת מידע רגיש)
 # ----------------------------------------
 with tab7:
     st.header("⚙️ הגדרות מערכת ומייל")
-    st.markdown("""
-    **הגדרת שליחת מייל ל־SHIRPI29@GMAIL.COM:**
-    1. הפעל אימות דו-שלבי בחשבון הגוגל השולח.
-    2. צור **סיסמת אפליקציה (App Password)** בהגדרות האבטחה של גוגל (קוד בן 16 תווים).
-    3. הכנס כאן למטה את המייל השולח ואת הקוד.
+    
+    st.info("""
+    **💡 טיפ אבטחה:** מומלץ לא לשמור סיסמאות כאן. 
+    עדיף ליצור קובץ `.streamlit/secrets.toml` ולשמור אותן שם. האפליקציה תמשוך אותן אוטומטית.
     """)
     
+    has_secrets = "SENDER_EMAIL" in st.secrets
+    if has_secrets:
+        st.success("✅ המערכת מזהה קובץ Secrets. נתונים רגישים מוסתרים ומאובטחים.")
+    
+    st.markdown("---")
     current_sender = st.session_state.app_data.get("sender_email", "")
     current_pass = st.session_state.app_data.get("sender_password", "")
+    current_target = st.session_state.app_data.get("target_email", "")
     
-    new_sender = st.text_input("כתובת מייל שולחת (Gmail):", value=current_sender)
-    new_pass = st.text_input("סיסמת אפליקציה (App Password):", type="password", value=current_pass)
-    
-    if st.button("שמור הגדרות מייל 💾", type="primary"):
-        st.session_state.app_data["sender_email"] = new_sender.strip()
-        st.session_state.app_data["sender_password"] = new_pass.strip()
-        save_data(st.session_state.app_data)
-        st.success("הגדרות המייל עודכנו בהצלחה!")
+    with st.form("settings_form"):
+        st.write("הגדרות מקומיות (יוחלפו אם קיימים ב-secrets):")
+        new_sender = st.text_input("מייל שולח (Gmail):", value=current_sender, disabled=has_secrets)
+        new_pass = st.text_input("סיסמת אפליקציה (App Password):", type="password", value=current_pass, disabled=has_secrets)
+        new_target = st.text_input("מייל לקבלת התראות:", value=current_target, disabled=("TARGET_EMAIL" in st.secrets))
+        
+        if st.form_submit_button("שמור הגדרות 💾", type="primary"):
+            st.session_state.app_data["sender_email"] = new_sender.strip()
+            st.session_state.app_data["sender_password"] = new_pass.strip()
+            st.session_state.app_data["target_email"] = new_target.strip()
+            save_data(st.session_state.app_data)
+            st.success("ההגדרות נשמרו בהצלחה!")
