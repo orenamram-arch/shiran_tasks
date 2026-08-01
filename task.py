@@ -46,7 +46,7 @@ CUSTOM_CSS = """
     }
     .task-title { font-size: 20px; font-weight: 700; color: #38bdf8; margin-bottom: 4px; }
     .task-desc { font-size: 14px; color: #94a3b8; margin-bottom: 12px; }
-    .task-meta { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;}
+    .task-meta { font-size: 12px; color: #cbd5e1; display: flex; justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 8px;}
     .tag { background-color: #1e3a8a; color: #bfdbfe; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }
     
     .stButton>button {
@@ -148,7 +148,7 @@ def send_email_notification(subject, body):
     except Exception as e:
         return False, f"שגיאה בשליחת המייל: {str(e)}"
 
-# פונקציה מעודכנת ליצירת קובץ היומן - ללא ה-Z בסוף השעה! (זמן מקומי)
+# פונקציה מעודכנת ליצירת קובץ היומן - זמן מקומי מדויק
 def generate_ics_content(title, rem_date, rem_time):
     dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}"
     ics_content = f"""BEGIN:VCALENDAR
@@ -168,6 +168,16 @@ END:VEVENT
 END:VCALENDAR"""
     return ics_content
 
+# פונקציית עזר להמרת עדיפות למספר (כדי שאפשר יהיה למיין)
+def get_priority_value(priority_str):
+    mapping = {"גבוהה": 1, "בינונית": 2, "נמוכה": 3}
+    return mapping.get(priority_str, 2) # בינונית כברירת מחדל אם חסר
+
+# פונקציית עזר להמרת תאריך למחרוזת בטוחה למיון
+def safe_date(date_str):
+    try: return datetime.strptime(date_str, "%Y-%m-%d")
+    except: return datetime.max
+
 tasks = st.session_state.app_data['tasks']
 archive = st.session_state.app_data.setdefault('archive', [])
 reminders = st.session_state.app_data.setdefault('reminders', [])
@@ -178,7 +188,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 ])
 
 # ----------------------------------------
-# Tab 1: רשימת משימות (כולל סינון, מיון ועריכה)
+# Tab 1: רשימת משימות (סינון, מיון ועריכה)
 # ----------------------------------------
 with tab1:
     st.title("⚡ FocusFlow | משימות פעילות")
@@ -196,18 +206,33 @@ with tab1:
     if not tasks:
         st.info("💡 אין משימות פעילות כרגע. הוסף משימה חדשה בלשונית 'הוספה'.")
     else:
-        f_col1, f_col2 = st.columns(2)
-        all_categories = ["הכל"] + list(set([t['category'] for t in tasks]))
-        filter_cat = f_col1.selectbox("🔍 סנן לפי קטגוריה:", all_categories)
-        sort_by = f_col2.selectbox("⇅ מיין לפי:", ["תאריך יעד (קרוב לרחוק)", "הוסף לאחרונה"])
+        # אזור סינון ומיון מעודכן
+        f_col1, f_col2, f_col3 = st.columns(3)
+        all_categories = ["הכל"] + list(set([t.get('category', 'אחר') for t in tasks]))
+        
+        filter_cat = f_col1.selectbox("🔍 קטגוריה:", all_categories)
+        filter_pri = f_col2.selectbox("⚡ עדיפות:", ["הכל", "גבוהה", "בינונית", "נמוכה"])
+        sort_by = f_col3.selectbox("⇅ מיין לפי:", [
+            "תאריך יעד ואז עדיפות", 
+            "תאריך יעד (קרוב לרחוק)", 
+            "עדיפות (גבוהה לנמוכה)", 
+            "הוסף לאחרונה"
+        ])
 
+        # יישום סינונים
         display_tasks = tasks.copy()
         if filter_cat != "הכל":
-            display_tasks = [t for t in display_tasks if t['category'] == filter_cat]
+            display_tasks = [t for t in display_tasks if t.get('category') == filter_cat]
+        if filter_pri != "הכל":
+            display_tasks = [t for t in display_tasks if t.get('priority', 'בינונית') == filter_pri]
         
+        # יישום מיונים
         if sort_by == "תאריך יעד (קרוב לרחוק)":
-            try: display_tasks.sort(key=lambda x: datetime.strptime(x['due_date'], "%Y-%m-%d"))
-            except: display_tasks.sort(key=lambda x: x['due_date'])
+            display_tasks.sort(key=lambda x: safe_date(x.get('due_date', '')))
+        elif sort_by == "עדיפות (גבוהה לנמוכה)":
+            display_tasks.sort(key=lambda x: get_priority_value(x.get('priority', 'בינונית')))
+        elif sort_by == "תאריך יעד ואז עדיפות":
+            display_tasks.sort(key=lambda x: (safe_date(x.get('due_date', '')), get_priority_value(x.get('priority', 'בינונית'))))
         
         if not display_tasks:
             st.warning("לא נמצאו משימות תחת הסינון הנוכחי.")
@@ -219,14 +244,19 @@ with tab1:
                 progress_val = task.get('progress', 0)
                 border_color = "#10b981" if progress_val == 100 else "#3b82f6"
                 
+                # צבע עדיפות
+                priority_text = task.get('priority', 'בינונית')
+                pri_color = "#ef4444" if priority_text == "גבוהה" else "#f59e0b" if priority_text == "בינונית" else "#10b981"
+                
                 st.markdown(f"""
                 <div class="task-card" style="border-right: 6px solid {border_color};">
                     <div class="task-title">{task['title']}</div>
-                    <div class="task-desc">{task['description'] if task['description'] else 'אין תיאור נוסף'}</div>
+                    <div class="task-desc">{task['description'] if task.get('description') else 'אין תיאור נוסף'}</div>
                     <div class="task-meta">
-                        <span class="tag">{task['category']}</span>
-                        <span>📅 יעד: {task['due_date']}</span>
-                        <span style="font-weight: bold; color: {'#10b981' if progress_val == 100 else '#38bdf8'};">הושלם: {progress_val}%</span>
+                        <span class="tag">{task.get('category', 'אחר')}</span>
+                        <span class="tag" style="background-color: {pri_color};">🔥 עדיפות: {priority_text}</span>
+                        <span>📅 יעד: {task.get('due_date', '')}</span>
+                        <span style="font-weight: bold; color: {'#10b981' if progress_val == 100 else '#38bdf8'}; margin-right:auto;">הושלם: {progress_val}%</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -257,18 +287,29 @@ with tab1:
                     else:
                         save_data(st.session_state.app_data)
 
+                # אזור העריכה
                 with edit_expander:
                     with st.form(f"form_edit_{task['id']}"):
                         e_title = st.text_input("שם", task['title'])
-                        e_desc = st.text_area("תיאור", task['description'])
-                        try: curr_date = datetime.strptime(task['due_date'], "%Y-%m-%d").date()
-                        except: curr_date = date.today()
-                        e_date = st.date_input("יעד", curr_date)
+                        e_desc = st.text_area("תיאור", task.get('description', ''))
+                        
+                        col_e1, col_e2, col_e3 = st.columns(3)
+                        with col_e1:
+                            try: curr_date = datetime.strptime(task.get('due_date', ''), "%Y-%m-%d").date()
+                            except: curr_date = date.today()
+                            e_date = st.date_input("יעד", curr_date)
+                        with col_e2:
+                            e_cat = st.selectbox("קטגוריה", ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"], index=["עבודה", "לימודים", "אישי", "פרויקט", "אחר"].index(task.get('category', 'עבודה')) if task.get('category') in ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"] else 4)
+                        with col_e3:
+                            pri_list = ["נמוכה", "בינונית", "גבוהה"]
+                            e_pri = st.selectbox("עדיפות", pri_list, index=pri_list.index(priority_text) if priority_text in pri_list else 1)
                         
                         if st.form_submit_button("שמור", type="primary"):
                             tasks[idx]['title'] = e_title
                             tasks[idx]['description'] = e_desc
                             tasks[idx]['due_date'] = e_date.strftime("%Y-%m-%d")
+                            tasks[idx]['category'] = e_cat
+                            tasks[idx]['priority'] = e_pri
                             save_data(st.session_state.app_data)
                             st.rerun()
 
@@ -294,9 +335,12 @@ with tab2:
     st.header("➕ הוספת משימה חדשה")
     with st.form("add_task_form", clear_on_submit=True):
         title = st.text_input("שם המשימה *")
-        category = st.selectbox("קטגוריה", ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"])
         desc = st.text_area("תיאור מפורט")
-        due_date = st.date_input("תאריך יעד")
+        
+        c1, c2, c3 = st.columns(3)
+        with c1: due_date = st.date_input("תאריך יעד")
+        with c2: category = st.selectbox("קטגוריה", ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"])
+        with c3: priority = st.selectbox("עדיפות", ["נמוכה", "בינונית", "גבוהה"], index=1)
         
         if st.form_submit_button("הוסף למערכת 🚀", type="primary"):
             if title.strip():
@@ -305,6 +349,7 @@ with tab2:
                     "title": title.strip(),
                     "description": desc,
                     "category": category,
+                    "priority": priority,
                     "due_date": due_date.strftime("%Y-%m-%d"),
                     "progress": 0
                 }
@@ -337,7 +382,7 @@ with tab3:
         col_g2.metric("משימות בארכיון", total_archived)
 
 # ----------------------------------------
-# Tab 4: תזכורות (כפתור הורדה מותאם לספארי/אייפון)
+# Tab 4: תזכורות 
 # ----------------------------------------
 with tab4:
     st.header("⏰ ניהול תזכורות למשימות")
@@ -374,16 +419,13 @@ with tab4:
             for idx, r in enumerate(reminders):
                 st.write(f"• **{r['title']}** ({r['time']})")
                 
-                # המרה חזרה לאובייקטי תאריך וזמן
                 try: d_obj = datetime.strptime(r['date_str'], "%Y-%m-%d").date()
                 except: d_obj = date.today()
                 try: t_obj = datetime.strptime(r['time_str'], "%H:%M:%S").time()
                 except: t_obj = datetime.now().time()
                 
-                # ייצור קובץ הלוח שנה
                 ics_data = generate_ics_content(r['title'], d_obj, t_obj)
                 
-                # כפתור ההורדה הרשמי של Streamlit
                 st.download_button(
                     label="📥 הוסף אירוע ליומן האייפון (iCal)",
                     data=ics_data,
@@ -411,7 +453,7 @@ with tab5:
             <div class="task-card" style="border-right: 6px solid #10b981; opacity: 0.7;">
                 <div class="task-title" style="color: #34d399;">✅ <s>{item['title']}</s></div>
                 <div class="task-meta">
-                    <span class="tag">{item['category']}</span>
+                    <span class="tag">{item.get('category', 'אחר')}</span>
                     <span>הושלם (100%)</span>
                 </div>
             </div>
