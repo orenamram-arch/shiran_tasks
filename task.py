@@ -234,7 +234,7 @@ with tab1:
             display_tasks.sort(key=lambda x: (safe_date(x.get('due_date', '')), get_priority_value(x.get('priority', 'בינונית'))))
         
         if not display_tasks:
-            st.warning("לא נמצאו משימות תחת הסינון הנוכחי.")
+            st.warning("לא נמצאו משימות תחת הסינון הנוכחי (נסה לשנות את הסינונים למעלה ל-'הכל').")
 
         for task in display_tasks:
             idx = tasks.index(task) 
@@ -271,13 +271,10 @@ with tab1:
                     )
                 
                 with col_actions:
-                    # הוחלף לכפתור רגיל במקום ה-Expander הבעייתי!
                     if st.button("✏️ עריכה", key=f"btn_edit_{task['id']}"):
-                        # הופך את המצב של העריכה מ-מוסתר ל-מוצג ולהיפך
                         current_state = st.session_state.get(f"show_edit_{task['id']}", False)
                         st.session_state[f"show_edit_{task['id']}"] = not current_state
 
-                # שמירת שינויים בסליידר ההתקדמות
                 if new_progress != progress_val:
                     tasks[idx]['progress'] = new_progress
                     if new_progress == 100:
@@ -291,7 +288,6 @@ with tab1:
                     else:
                         save_data(st.session_state.app_data)
 
-                # אזור העריכה - נפתח רק אם לחצו על הכפתור
                 if st.session_state.get(f"show_edit_{task['id']}", False):
                     with st.container():
                         with st.form(f"form_edit_{task['id']}"):
@@ -315,12 +311,10 @@ with tab1:
                                 tasks[idx]['due_date'] = e_date.strftime("%Y-%m-%d")
                                 tasks[idx]['category'] = e_cat
                                 tasks[idx]['priority'] = e_pri
-                                # סגירת טופס העריכה אחרי השמירה
                                 st.session_state[f"show_edit_{task['id']}"] = False
                                 save_data(st.session_state.app_data)
                                 st.rerun()
 
-                # כפתורים נוספים
                 c1, c2 = st.columns(2)
                 if c1.button("✔️ סיים מיד (100%)", key=f"t_done_{task['id']}", type="primary"):
                     tasks[idx]['progress'] = 100
@@ -364,9 +358,17 @@ with tab2:
                 tasks.append(new_task)
                 save_data(st.session_state.app_data)
                 update_xp(5)
-                st.success("המשימה נוספה בהצלחה! קיבלת 5 XP!")
+                # הוספנו דגל קטן ב-Session State כדי שנדע להציג הצלחה
+                st.session_state.task_added_success = True
             else:
                 st.warning("נא להזין שם משימה.")
+
+    # הצגת הודעה ורענון אוטומטי שמעביר את המסך מיד ללשונית המשימות
+    if st.session_state.get('task_added_success', False):
+        st.session_state.task_added_success = False
+        st.success("המשימה נוספה בהצלחה! מעביר אותך לרשימת המשימות...")
+        time.sleep(0.8)
+        st.rerun()
 
 # ----------------------------------------
 # Tab 3: גרף התקדמות
