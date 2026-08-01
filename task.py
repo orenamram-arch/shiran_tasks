@@ -7,7 +7,6 @@ import time
 import uuid
 import smtplib
 from email.message import EmailMessage
-import base64
 
 # --- 1. הגדרות עמוד ועיצוב UI/UX יוקרתי ---
 st.set_page_config(page_title="FocusFlow Pro | ניהול משימות מתקדם", page_icon="⚡", layout="centered")
@@ -111,12 +110,9 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# משיכת נתונים מ-secrets במידה וקיימים
 def get_config(key, default=""):
-    # קודם בודק אם מוגדר ב-secrets של Streamlit
     if key in st.secrets:
         return st.secrets[key]
-    # אחרת שואב מההגדרות המקומיות שלנו
     return st.session_state.app_data.get(key.lower(), default)
 
 def update_xp(amount):
@@ -152,7 +148,8 @@ def send_email_notification(subject, body):
     except Exception as e:
         return False, f"שגיאה בשליחת המייל: {str(e)}"
 
-def get_ics_file_download_link(title, rem_date, rem_time):
+# פונקציה חדשה שרק מייצרת את התוכן של קובץ היומן
+def generate_ics_content(title, rem_date, rem_time):
     dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}Z"
     ics_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
@@ -169,10 +166,7 @@ DESCRIPTION:תזכורת פעילה
 END:VALARM
 END:VEVENT
 END:VCALENDAR"""
-    
-    b64 = base64.b64encode(ics_content.encode('utf-8')).decode("utf-8")
-    href = f'<a href="data:text/calendar;charset=utf-8,{b64}" download="reminder.ics" style="background-color: #10b981; color: white; padding: 10px 15px; border-radius: 10px; text-decoration: none; font-weight: bold; display: block; text-align: center; margin-top: 10px;">📥 הוסף אירוע ליומן האייפון (iCal)</a>'
-    return href
+    return ics_content
 
 tasks = st.session_state.app_data['tasks']
 archive = st.session_state.app_data.setdefault('archive', [])
@@ -202,29 +196,23 @@ with tab1:
     if not tasks:
         st.info("💡 אין משימות פעילות כרגע. הוסף משימה חדשה בלשונית 'הוספה'.")
     else:
-        # כלים: סינון ומיון
         f_col1, f_col2 = st.columns(2)
         all_categories = ["הכל"] + list(set([t['category'] for t in tasks]))
         filter_cat = f_col1.selectbox("🔍 סנן לפי קטגוריה:", all_categories)
         sort_by = f_col2.selectbox("⇅ מיין לפי:", ["תאריך יעד (קרוב לרחוק)", "הוסף לאחרונה"])
 
-        # יישום סינון ומיון
         display_tasks = tasks.copy()
         if filter_cat != "הכל":
             display_tasks = [t for t in display_tasks if t['category'] == filter_cat]
         
         if sort_by == "תאריך יעד (קרוב לרחוק)":
-            # ננסה למיין תאריכים בפורמט מיתרוזת, אם נכשל נשאיר רגיל
-            try:
-                display_tasks.sort(key=lambda x: datetime.strptime(x['due_date'], "%Y-%m-%d"))
-            except:
-                display_tasks.sort(key=lambda x: x['due_date'])
+            try: display_tasks.sort(key=lambda x: datetime.strptime(x['due_date'], "%Y-%m-%d"))
+            except: display_tasks.sort(key=lambda x: x['due_date'])
         
         if not display_tasks:
             st.warning("לא נמצאו משימות תחת הסינון הנוכחי.")
 
         for task in display_tasks:
-            # מציאת האינדקס המקורי במערך הרשמי (כדי לשמור נתונים נכון)
             idx = tasks.index(task) 
             
             with st.container():
@@ -243,7 +231,6 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # כלי ניהול משימה
                 col_slider, col_actions = st.columns([2, 1])
                 
                 with col_slider:
@@ -255,10 +242,8 @@ with tab1:
                     )
                 
                 with col_actions:
-                    # כפתור עריכה שפותח Expander
-                    edit_expander = st.expander("✏️ ערוך משימה")
+                    edit_expander = st.expander("✏️ ערוך")
 
-                # אם שינו את אחוזי ההתקדמות בסליידר
                 if new_progress != progress_val:
                     tasks[idx]['progress'] = new_progress
                     if new_progress == 100:
@@ -272,27 +257,21 @@ with tab1:
                     else:
                         save_data(st.session_state.app_data)
 
-                # אזור העריכה (Expander)
                 with edit_expander:
                     with st.form(f"form_edit_{task['id']}"):
                         e_title = st.text_input("שם", task['title'])
                         e_desc = st.text_area("תיאור", task['description'])
-                        try:
-                            curr_date = datetime.strptime(task['due_date'], "%Y-%m-%d").date()
-                        except:
-                            curr_date = date.today()
+                        try: curr_date = datetime.strptime(task['due_date'], "%Y-%m-%d").date()
+                        except: curr_date = date.today()
                         e_date = st.date_input("יעד", curr_date)
                         
-                        if st.form_submit_button("שמור שינויים", type="primary"):
+                        if st.form_submit_button("שמור", type="primary"):
                             tasks[idx]['title'] = e_title
                             tasks[idx]['description'] = e_desc
                             tasks[idx]['due_date'] = e_date.strftime("%Y-%m-%d")
                             save_data(st.session_state.app_data)
-                            st.success("השינויים נשמרו!")
-                            time.sleep(0.5)
                             st.rerun()
 
-                # כפתורי פעולה מהירים
                 c1, c2 = st.columns(2)
                 if c1.button("✔️ סיים מיד (100%)", key=f"t_done_{task['id']}", type="primary"):
                     tasks[idx]['progress'] = 100
@@ -337,12 +316,10 @@ with tab2:
                 st.warning("נא להזין שם משימה.")
 
 # ----------------------------------------
-# Tab 3: גרף התקדמות כללי (Analytics)
+# Tab 3: גרף התקדמות
 # ----------------------------------------
 with tab3:
     st.header("📊 מדדי התקדמות וגרף ביצוע")
-    st.write("מצב ההתקדמות הכללי של המשימות הפתוחות שלך:")
-    
     if not tasks and not archive:
         st.info("אין מספיק נתונים להצגת גרף. הוסף משימות והתחל לעבוד.")
     else:
@@ -360,12 +337,12 @@ with tab3:
         col_g2.metric("משימות בארכיון", total_archived)
 
 # ----------------------------------------
-# Tab 4: תזכורות (יומן אייפון + מייל)
+# Tab 4: תזכורות (כפתור הורדה מותאם לספארי/אייפון)
 # ----------------------------------------
 with tab4:
     st.header("⏰ ניהול תזכורות למשימות")
     target_em = get_config("TARGET_EMAIL", "המייל שהגדרת")
-    st.write(f"קבע מועד למשימה, קבל אימייל ל־**{target_em}** והורד התראה ליומן.")
+    st.write(f"קבע מועד למשימה, והורד התראה ישירות ליומן האייפון שלך.")
     
     if not tasks:
         st.info("💡 אין משימות פתוחות. הוסף משימה קודם.")
@@ -378,36 +355,44 @@ with tab4:
             rem_date = c_date.date_input("תאריך התזכורת")
             rem_time = c_time.time_input("שעת התזכורת")
             
-            send_email_checkbox = st.checkbox("שלח התראה מיידית במייל 📧", value=True)
+            send_email_checkbox = st.checkbox("שלח בנוסף התראה למייל 📧", value=False) # כיבית את המייל כברירת מחדל
             
-            if st.form_submit_button("הגדר תזכורת 🔔", type="primary"):
+            if st.form_submit_button("שמור תזכורת באפליקציה 🔔", type="primary"):
                 rem_str = f"{rem_date} בשעה {rem_time}"
                 reminders.append({"title": selected_task_title, "time": rem_str, "date_str": str(rem_date), "time_str": str(rem_time)})
                 save_data(st.session_state.app_data)
                 
                 if send_email_checkbox:
-                    success, msg = send_email_notification(
+                    send_email_notification(
                         subject=f"תזכורת מ-FocusFlow: {selected_task_title}",
                         body=f"שלום,\n\nיש לך תזכורת למשימה:\n📌 משימה: {selected_task_title}\n⏰ מועד: {rem_str}\n\nבהצלחה!"
                     )
-                    if success: st.success(msg)
-                    else: st.warning(f"התזכורת נשמרה ביומן, אך שליחת המייל נכשלה: {msg}")
-                else:
-                    st.success("התזכורת נוספה בהצלחה!")
+                st.success("התזכורת נוצרה! כעת לחץ על כפתור ההורדה ליומן למטה.")
 
         if reminders:
             st.markdown("### 📥 תזכורות שנקבעו (להורדה ליומן Apple):")
             for idx, r in enumerate(reminders):
                 st.write(f"• **{r['title']}** ({r['time']})")
                 
-                # שחזור תאריך אובייקט
+                # המרה חזרה לאובייקטי תאריך וזמן
                 try: d_obj = datetime.strptime(r['date_str'], "%Y-%m-%d").date()
                 except: d_obj = date.today()
                 try: t_obj = datetime.strptime(r['time_str'], "%H:%M:%S").time()
                 except: t_obj = datetime.now().time()
                 
-                st.markdown(get_ics_file_download_link(r['title'], d_obj, t_obj), unsafe_allow_html=True)
-                if st.button("מחק תזכורת", key=f"rem_del_{idx}"):
+                # ייצור קובץ הלוח שנה
+                ics_data = generate_ics_content(r['title'], d_obj, t_obj)
+                
+                # כפתור ההורדה הרשמי של Streamlit (עובד מעולה בספארי)
+                st.download_button(
+                    label="📥 הוסף אירוע ליומן האייפון (iCal)",
+                    data=ics_data,
+                    file_name=f"reminder_{idx}.ics",
+                    mime="text/calendar",
+                    key=f"dl_ics_{idx}"
+                )
+                
+                if st.button("מחק תזכורת מהאפליקציה", key=f"rem_del_{idx}"):
                     reminders.pop(idx)
                     save_data(st.session_state.app_data)
                     st.rerun()
@@ -437,13 +422,12 @@ with tab5:
                 st.rerun()
 
 # ----------------------------------------
-# Tab 6: פוקוס פומודורו (Real-Time Timer)
+# Tab 6: פוקוס פומודורו
 # ----------------------------------------
 with tab6:
     st.header("🍅 טיימר פוקוס (פומודורו)")
     st.write("מחקרים מראים שעבודה בריכוז רצוף של 25 דקות מעלה משמעותית את הפרודוקטיביות.")
     
-    # מצב טיימר
     if 'timer_running' not in st.session_state:
         st.session_state.timer_running = False
 
@@ -458,8 +442,6 @@ with tab6:
             
         timer_placeholder = st.empty()
         
-        # לולאת ספירה לאחור
-        # הערה: עבודה עם time.sleep ב-Streamlit "תוקעת" את המסך לפעולות אחרות. זה תקין למצב 'פוקוס' בו אנחנו לא רוצים הסחות דעת.
         for i in range(25 * 60, -1, -1):
             if not st.session_state.timer_running:
                 break
@@ -468,34 +450,24 @@ with tab6:
             timer_placeholder.markdown(f"<div class='timer-display'>{mins:02d}:{secs:02d}</div>", unsafe_allow_html=True)
             time.sleep(1)
             
-        if st.session_state.timer_running:  # אם הלולאה הסתיימה באופן טבעי ולא בגלל כפתור עצירה
+        if st.session_state.timer_running:
             st.session_state.timer_running = False
             st.balloons()
             st.success("🎉 סבב הפוקוס הסתיים! עבודה מעולה. קח 5 דקות הפסקה.")
-            update_xp(20) # מעניק אקסטרה XP על סיום פומודורו!
+            update_xp(20)
 
 # ----------------------------------------
-# Tab 7: הגדרות (ניהול דינמי והסתרת מידע רגיש)
+# Tab 7: הגדרות 
 # ----------------------------------------
 with tab7:
     st.header("⚙️ הגדרות מערכת ומייל")
-    
-    st.info("""
-    **💡 טיפ אבטחה:** מומלץ לא לשמור סיסמאות כאן. 
-    עדיף ליצור קובץ `.streamlit/secrets.toml` ולשמור אותן שם. האפליקציה תמשוך אותן אוטומטית.
-    """)
-    
     has_secrets = "SENDER_EMAIL" in st.secrets
-    if has_secrets:
-        st.success("✅ המערכת מזהה קובץ Secrets. נתונים רגישים מוסתרים ומאובטחים.")
-    
-    st.markdown("---")
     current_sender = st.session_state.app_data.get("sender_email", "")
     current_pass = st.session_state.app_data.get("sender_password", "")
     current_target = st.session_state.app_data.get("target_email", "")
     
     with st.form("settings_form"):
-        st.write("הגדרות מקומיות (יוחלפו אם קיימים ב-secrets):")
+        st.write("אם תרצה התראות במייל, הגדר כאן:")
         new_sender = st.text_input("מייל שולח (Gmail):", value=current_sender, disabled=has_secrets)
         new_pass = st.text_input("סיסמת אפליקציה (App Password):", type="password", value=current_pass, disabled=has_secrets)
         new_target = st.text_input("מייל לקבלת התראות:", value=current_target, disabled=("TARGET_EMAIL" in st.secrets))
