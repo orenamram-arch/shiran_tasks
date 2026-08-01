@@ -148,9 +148,9 @@ def send_email_notification(subject, body):
     except Exception as e:
         return False, f"שגיאה בשליחת המייל: {str(e)}"
 
-# פונקציה חדשה שרק מייצרת את התוכן של קובץ היומן
+# פונקציה מעודכנת ליצירת קובץ היומן - ללא ה-Z בסוף השעה! (זמן מקומי)
 def generate_ics_content(title, rem_date, rem_time):
-    dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}Z"
+    dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}"
     ics_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//FocusFlow Task Manager//EN
@@ -355,7 +355,7 @@ with tab4:
             rem_date = c_date.date_input("תאריך התזכורת")
             rem_time = c_time.time_input("שעת התזכורת")
             
-            send_email_checkbox = st.checkbox("שלח בנוסף התראה למייל 📧", value=False) # כיבית את המייל כברירת מחדל
+            send_email_checkbox = st.checkbox("שלח בנוסף התראה למייל 📧", value=False)
             
             if st.form_submit_button("שמור תזכורת באפליקציה 🔔", type="primary"):
                 rem_str = f"{rem_date} בשעה {rem_time}"
@@ -383,7 +383,7 @@ with tab4:
                 # ייצור קובץ הלוח שנה
                 ics_data = generate_ics_content(r['title'], d_obj, t_obj)
                 
-                # כפתור ההורדה הרשמי של Streamlit (עובד מעולה בספארי)
+                # כפתור ההורדה הרשמי של Streamlit
                 st.download_button(
                     label="📥 הוסף אירוע ליומן האייפון (iCal)",
                     data=ics_data,
