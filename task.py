@@ -148,7 +148,7 @@ def send_email_notification(subject, body):
     except Exception as e:
         return False, f"שגיאה בשליחת המייל: {str(e)}"
 
-# פונקציה מעודכנת ליצירת קובץ היומן - זמן מקומי מדויק
+# פונקציה ליצירת קובץ היומן - זמן מקומי מדויק
 def generate_ics_content(title, rem_date, rem_time):
     dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}"
     ics_content = f"""BEGIN:VCALENDAR
@@ -168,12 +168,11 @@ END:VEVENT
 END:VCALENDAR"""
     return ics_content
 
-# פונקציית עזר להמרת עדיפות למספר (כדי שאפשר יהיה למיין)
+# פונקציות עזר למיון
 def get_priority_value(priority_str):
     mapping = {"גבוהה": 1, "בינונית": 2, "נמוכה": 3}
-    return mapping.get(priority_str, 2) # בינונית כברירת מחדל אם חסר
+    return mapping.get(priority_str, 2)
 
-# פונקציית עזר להמרת תאריך למחרוזת בטוחה למיון
 def safe_date(date_str):
     try: return datetime.strptime(date_str, "%Y-%m-%d")
     except: return datetime.max
@@ -188,7 +187,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 ])
 
 # ----------------------------------------
-# Tab 1: רשימת משימות (סינון, מיון ועריכה)
+# Tab 1: רשימת משימות
 # ----------------------------------------
 with tab1:
     st.title("⚡ FocusFlow | משימות פעילות")
@@ -272,8 +271,13 @@ with tab1:
                     )
                 
                 with col_actions:
-                    edit_expander = st.expander("✏️ ערוך")
+                    # הוחלף לכפתור רגיל במקום ה-Expander הבעייתי!
+                    if st.button("✏️ עריכה", key=f"btn_edit_{task['id']}"):
+                        # הופך את המצב של העריכה מ-מוסתר ל-מוצג ולהיפך
+                        current_state = st.session_state.get(f"show_edit_{task['id']}", False)
+                        st.session_state[f"show_edit_{task['id']}"] = not current_state
 
+                # שמירת שינויים בסליידר ההתקדמות
                 if new_progress != progress_val:
                     tasks[idx]['progress'] = new_progress
                     if new_progress == 100:
@@ -287,32 +291,36 @@ with tab1:
                     else:
                         save_data(st.session_state.app_data)
 
-                # אזור העריכה
-                with edit_expander:
-                    with st.form(f"form_edit_{task['id']}"):
-                        e_title = st.text_input("שם", task['title'])
-                        e_desc = st.text_area("תיאור", task.get('description', ''))
-                        
-                        col_e1, col_e2, col_e3 = st.columns(3)
-                        with col_e1:
-                            try: curr_date = datetime.strptime(task.get('due_date', ''), "%Y-%m-%d").date()
-                            except: curr_date = date.today()
-                            e_date = st.date_input("יעד", curr_date)
-                        with col_e2:
-                            e_cat = st.selectbox("קטגוריה", ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"], index=["עבודה", "לימודים", "אישי", "פרויקט", "אחר"].index(task.get('category', 'עבודה')) if task.get('category') in ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"] else 4)
-                        with col_e3:
-                            pri_list = ["נמוכה", "בינונית", "גבוהה"]
-                            e_pri = st.selectbox("עדיפות", pri_list, index=pri_list.index(priority_text) if priority_text in pri_list else 1)
-                        
-                        if st.form_submit_button("שמור", type="primary"):
-                            tasks[idx]['title'] = e_title
-                            tasks[idx]['description'] = e_desc
-                            tasks[idx]['due_date'] = e_date.strftime("%Y-%m-%d")
-                            tasks[idx]['category'] = e_cat
-                            tasks[idx]['priority'] = e_pri
-                            save_data(st.session_state.app_data)
-                            st.rerun()
+                # אזור העריכה - נפתח רק אם לחצו על הכפתור
+                if st.session_state.get(f"show_edit_{task['id']}", False):
+                    with st.container():
+                        with st.form(f"form_edit_{task['id']}"):
+                            e_title = st.text_input("שם", task['title'])
+                            e_desc = st.text_area("תיאור", task.get('description', ''))
+                            
+                            col_e1, col_e2, col_e3 = st.columns(3)
+                            with col_e1:
+                                try: curr_date = datetime.strptime(task.get('due_date', ''), "%Y-%m-%d").date()
+                                except: curr_date = date.today()
+                                e_date = st.date_input("יעד", curr_date)
+                            with col_e2:
+                                e_cat = st.selectbox("קטגוריה", ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"], index=["עבודה", "לימודים", "אישי", "פרויקט", "אחר"].index(task.get('category', 'עבודה')) if task.get('category') in ["עבודה", "לימודים", "אישי", "פרויקט", "אחר"] else 4)
+                            with col_e3:
+                                pri_list = ["נמוכה", "בינונית", "גבוהה"]
+                                e_pri = st.selectbox("עדיפות", pri_list, index=pri_list.index(priority_text) if priority_text in pri_list else 1)
+                            
+                            if st.form_submit_button("שמור שינויים", type="primary"):
+                                tasks[idx]['title'] = e_title
+                                tasks[idx]['description'] = e_desc
+                                tasks[idx]['due_date'] = e_date.strftime("%Y-%m-%d")
+                                tasks[idx]['category'] = e_cat
+                                tasks[idx]['priority'] = e_pri
+                                # סגירת טופס העריכה אחרי השמירה
+                                st.session_state[f"show_edit_{task['id']}"] = False
+                                save_data(st.session_state.app_data)
+                                st.rerun()
 
+                # כפתורים נוספים
                 c1, c2 = st.columns(2)
                 if c1.button("✔️ סיים מיד (100%)", key=f"t_done_{task['id']}", type="primary"):
                     tasks[idx]['progress'] = 100
