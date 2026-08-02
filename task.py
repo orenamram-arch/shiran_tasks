@@ -103,6 +103,7 @@ def load_data():
     }
     
     if not supabase:
+        st.error("הגדרות Supabase (SUPABASE_URL / SUPABASE_KEY) חסרות ב-Streamlit Secrets!")
         return default_data
         
     try:
