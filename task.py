@@ -110,7 +110,6 @@ def load_data():
         if response.data and len(response.data) > 0:
             return response.data[0]["data"]
         else:
-            # אם אין שורה במסד הנתונים, ניצור אחת חדשה
             supabase.table("app_data").insert({"id": 1, "data": default_data}).execute()
             return default_data
     except Exception as e:
