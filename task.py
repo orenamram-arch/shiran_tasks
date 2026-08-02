@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 import json
-import os
 import time
 import uuid
 import smtplib
 from email.message import EmailMessage
+from supabase import create_client, Client
 
 # --- 1. הגדרות עמוד ועיצוב UI/UX יוקרתי ---
 st.set_page_config(page_title="FocusFlow Pro | ניהול משימות מתקדם", page_icon="⚡", layout="centered")
@@ -78,18 +78,20 @@ CUSTOM_CSS = """
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# --- 2. מנגנון שמירה והגדרות יציבות ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, 'focusflow_data.json')
+# --- 2. חיבור ל-SUPABASE ושמירת נתונים ---
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+
+@st.cache_resource
+def init_supabase():
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+supabase = init_supabase()
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
+    default_data = {
         "tasks": [], 
         "archive": [], 
         "reminders": [], 
@@ -99,13 +101,30 @@ def load_data():
         "sender_password": "",
         "target_email": ""
     }
+    
+    if not supabase:
+        return default_data
+        
+    try:
+        response = supabase.table("app_data").select("data").eq("id", 1).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]["data"]
+        else:
+            # אם אין שורה במסד הנתונים, ניצור אחת חדשה
+            supabase.table("app_data").insert({"id": 1, "data": default_data}).execute()
+            return default_data
+    except Exception as e:
+        st.error(f"שגיאה בטעינת נתונים מ-Supabase: {e}")
+        return default_data
 
 def save_data(data):
+    if not supabase:
+        st.error("הגדרות Supabase חסרות ב-Secrets!")
+        return
     try:
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        supabase.table("app_data").upsert({"id": 1, "data": data}).execute()
     except Exception as e:
-        st.error(f"שגיאה בשמירת נתונים: {e}")
+        st.error(f"שגיאה בשמירת נתונים ב-Supabase: {e}")
 
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
@@ -148,7 +167,6 @@ def send_email_notification(subject, body):
     except Exception as e:
         return False, f"שגיאה בשליחת המייל: {str(e)}"
 
-# פונקציה ליצירת קובץ היומן - זמן מקומי מדויק
 def generate_ics_content(title, rem_date, rem_time):
     dt_str = f"{rem_date.strftime('%Y%m%d')}T{rem_time.strftime('%H%M%S')}"
     ics_content = f"""BEGIN:VCALENDAR
@@ -168,7 +186,6 @@ END:VEVENT
 END:VCALENDAR"""
     return ics_content
 
-# פונקציות עזר למיון
 def get_priority_value(priority_str):
     mapping = {"גבוהה": 1, "בינונית": 2, "נמוכה": 3}
     return mapping.get(priority_str, 2)
@@ -205,7 +222,6 @@ with tab1:
     if not tasks:
         st.info("💡 אין משימות פעילות כרגע. הוסף משימה חדשה בלשונית 'הוספה'.")
     else:
-        # אזור סינון ומיון מעודכן
         f_col1, f_col2, f_col3 = st.columns(3)
         all_categories = ["הכל"] + list(set([t.get('category', 'אחר') for t in tasks]))
         
@@ -218,14 +234,12 @@ with tab1:
             "הוסף לאחרונה"
         ])
 
-        # יישום סינונים
         display_tasks = tasks.copy()
         if filter_cat != "הכל":
             display_tasks = [t for t in display_tasks if t.get('category') == filter_cat]
         if filter_pri != "הכל":
             display_tasks = [t for t in display_tasks if t.get('priority', 'בינונית') == filter_pri]
         
-        # יישום מיונים
         if sort_by == "תאריך יעד (קרוב לרחוק)":
             display_tasks.sort(key=lambda x: safe_date(x.get('due_date', '')))
         elif sort_by == "עדיפות (גבוהה לנמוכה)":
@@ -243,7 +257,6 @@ with tab1:
                 progress_val = task.get('progress', 0)
                 border_color = "#10b981" if progress_val == 100 else "#3b82f6"
                 
-                # צבע עדיפות
                 priority_text = task.get('priority', 'בינונית')
                 pri_color = "#ef4444" if priority_text == "גבוהה" else "#f59e0b" if priority_text == "בינונית" else "#10b981"
                 
@@ -358,12 +371,10 @@ with tab2:
                 tasks.append(new_task)
                 save_data(st.session_state.app_data)
                 update_xp(5)
-                # הוספנו דגל קטן ב-Session State כדי שנדע להציג הצלחה
                 st.session_state.task_added_success = True
             else:
                 st.warning("נא להזין שם משימה.")
 
-    # הצגת הודעה ורענון אוטומטי שמעביר את המסך מיד ללשונית המשימות
     if st.session_state.get('task_added_success', False):
         st.session_state.task_added_success = False
         st.success("המשימה נוספה בהצלחה! מעביר אותך לרשימת המשימות...")
@@ -396,7 +407,6 @@ with tab3:
 # ----------------------------------------
 with tab4:
     st.header("⏰ ניהול תזכורות למשימות")
-    target_em = get_config("TARGET_EMAIL", "המייל שהגדרת")
     st.write(f"קבע מועד למשימה, והורד התראה ישירות ליומן האייפון שלך.")
     
     if not tasks:
