@@ -106,11 +106,11 @@ def load_data():
         return default_data
         
     try:
-        response = supabase.table("app_data").select("data").eq("id", 1).execute()
+        response = supabase.table("tasks_app_data").select("data").eq("id", 1).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]["data"]
         else:
-            supabase.table("app_data").insert({"id": 1, "data": default_data}).execute()
+            supabase.table("tasks_app_data").insert({"id": 1, "data": default_data}).execute()
             return default_data
     except Exception as e:
         st.error(f"שגיאה בטעינת נתונים מ-Supabase: {e}")
@@ -121,7 +121,7 @@ def save_data(data):
         st.error("הגדרות Supabase חסרות ב-Secrets!")
         return
     try:
-        supabase.table("app_data").upsert({"id": 1, "data": data}).execute()
+        supabase.table("tasks_app_data").upsert({"id": 1, "data": data}).execute()
     except Exception as e:
         st.error(f"שגיאה בשמירת נתונים ב-Supabase: {e}")
 
